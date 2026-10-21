@@ -1,0 +1,490 @@
+/**
+ * Full zAmerican English curriculum.
+ *
+ * Every course maps to a real YouTube playlist on the zAmerican English channel
+ * (@ZAmericanEnglish). Lesson videos are fetched from those playlists at
+ * synchronisation time (`npm run db:sync`) and cached in the database, so the
+ * catalogue itself only needs the playlist ids plus editorial metadata.
+ *
+ * Playlist ids were read from the channel's public playlists page. To add or
+ * re-order courses, edit the arrays below — nothing else depends on the shape.
+ */
+import type { Level } from '../types';
+
+export interface CatalogCourse {
+  slug: string;
+  title: string;
+  titleAr: string;
+  description: string;
+  level: Level;
+  /** Curriculum track: 1..4 match the four channel levels; 0 is the extra library. */
+  levelGroup: number;
+  category: string;
+  coverEmoji: string;
+  accent: string;
+  playlistId: string;
+}
+
+export interface CatalogLevel {
+  group: number;
+  title: string;
+  titleAr: string;
+  description: string;
+  courses: CatalogCourse[];
+}
+
+const CHANNEL = 'https://www.youtube.com/playlist?list=';
+
+function video(playlistId: string): string {
+  return `${CHANNEL}${playlistId}`;
+}
+
+export const CATALOG_LEVELS: CatalogLevel[] = [
+  {
+    group: 1,
+    title: 'Level One',
+    titleAr: 'المستوى الأول',
+    description: 'بداية من الصفر: الحروف والأصوات، القواعد الأساسية، القراءة والكتابة والمحادثة.',
+    courses: [
+      {
+        slug: 'l1-from-scratch',
+        title: 'English from Scratch',
+        titleAr: 'تعلّم من الصفر حتى الاحتراف',
+        description: 'الكورس الشامل لتعلم الإنجليزية من الصفر للمبتدئين خطوة بخطوة.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'core',
+        coverEmoji: '🌱',
+        accent: 'emerald',
+        playlistId: 'PLp22-4PivYmIFAnru_L7fnMhSV5YffLTZ',
+      },
+      {
+        slug: 'l1-grammar',
+        title: 'Grammar — Level One',
+        titleAr: 'قواعد اللغة الإنجليزية — المستوى الأول',
+        description: 'شرح كامل لقواعد الإنجليزية للمبتدئين من الألف إلى الياء.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'grammar',
+        coverEmoji: '🧩',
+        accent: 'indigo',
+        playlistId: 'PLp22-4PivYmLBmV2wctgqyyRlIs1MhmNr',
+      },
+      {
+        slug: 'l1-phonetics',
+        title: 'Phonetics — Level One',
+        titleAr: 'الصوتيات ونطق الحروف — المستوى الأول',
+        description: 'تعلّم نطق الحروف الإنجليزية بشكل صحيح من البداية.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'phonetics',
+        coverEmoji: '🔊',
+        accent: 'sky',
+        playlistId: 'PLp22-4PivYmIiXGqtQMrfE_tzmqE6r7Tc',
+      },
+      {
+        slug: 'l1-reading',
+        title: 'Reading — Level One',
+        titleAr: 'القراءة — المستوى الأول',
+        description: 'تعلّم القراءة الصحيحة للنصوص الإنجليزية.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'reading',
+        coverEmoji: '📖',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmI4PahZ0eyFjcihT7_VAs79',
+      },
+      {
+        slug: 'l1-listening',
+        title: 'Listening — Level One',
+        titleAr: 'الاستماع — المستوى الأول',
+        description: 'تقوية مهارة الاستماع للغة الإنجليزية.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'listening',
+        coverEmoji: '🎧',
+        accent: 'violet',
+        playlistId: 'PLp22-4PivYmKGwdQda1LVJxE1p7BZYNgJ',
+      },
+      {
+        slug: 'l1-conversation',
+        title: 'Conversation — Level One',
+        titleAr: 'المحادثة — المستوى الأول',
+        description: 'تعلّم المحادثة بالإنجليزية من الصفر.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'conversation',
+        coverEmoji: '💬',
+        accent: 'teal',
+        playlistId: 'PLp22-4PivYmKp2aC7PI7K0POsf812xLBN',
+      },
+      {
+        slug: 'l1-writing',
+        title: 'Writing — Level One',
+        titleAr: 'الكتابة — المستوى الأول',
+        description: 'تعلّم كتابة موضوع تعبير بالإنجليزية.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'writing',
+        coverEmoji: '✍️',
+        accent: 'rose',
+        playlistId: 'PLp22-4PivYmL_FPWuMEJQ7_thNjF7JS0Y',
+      },
+      {
+        slug: 'l1-first-steps',
+        title: 'How to Watch the Lessons',
+        titleAr: 'كيف تشاهد الدروس بالترتيب الصحيح',
+        description: 'دليل ترتيب الدروس على القناة حسب مستوى المتعلّم.',
+        level: 'a1',
+        levelGroup: 1,
+        category: 'guidance',
+        coverEmoji: '🗺️',
+        accent: 'orange',
+        playlistId: 'PLp22-4PivYmLkQg-OQOOD1HttC0SCKOQ_',
+      },
+    ],
+  },
+  {
+    group: 2,
+    title: 'Level Two',
+    titleAr: 'المستوى الثاني',
+    description: 'الانتقال للمستوى المتوسّط: القواعد المتقدّمة، الاستماع للهجات، المحادثات العميقة والتفكير بالإنجليزية.',
+    courses: [
+      {
+        slug: 'l2-learn-like-natives',
+        title: 'Learn Like the West',
+        titleAr: 'تعلّم الإنجليزية كما يتعلّمها الغرب',
+        description: 'منهج المستوى الثاني لتعلم الإنجليزية بالطريقة الطبيعية.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'core',
+        coverEmoji: '🌿',
+        accent: 'emerald',
+        playlistId: 'PLp22-4PivYmIgc6vCBbX4aLOiQ6oCoyvN',
+      },
+      {
+        slug: 'l2-grammar',
+        title: 'Grammar — Level Two',
+        titleAr: 'قواعد اللغة الإنجليزية — المستوى الثاني',
+        description: 'شرح قواعد الإنجليزية كاملة للمستوى المتوسط.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'grammar',
+        coverEmoji: '🧩',
+        accent: 'indigo',
+        playlistId: 'PLp22-4PivYmLrOU3QTrnsogoRZGFmHnGk',
+      },
+      {
+        slug: 'l2-phonetics',
+        title: 'Phonetics & Pronunciation — Level Two',
+        titleAr: 'الصوتيات وتحسين النطق — المستوى الثاني',
+        description: 'شرح الصوتيات البريطانية والأمريكية وتحسين النطق.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'phonetics',
+        coverEmoji: '🔊',
+        accent: 'sky',
+        playlistId: 'PLp22-4PivYmIlFAg2fuo--xVxScz9_6h2',
+      },
+      {
+        slug: 'l2-listening',
+        title: 'Listening & Accents — Level Two',
+        titleAr: 'تقوية الاستماع وفهم اللهجات — المستوى الثاني',
+        description: 'تقوية مهارة الاستماع وفهم اللهجات المختلفة.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'listening',
+        coverEmoji: '🎧',
+        accent: 'violet',
+        playlistId: 'PLp22-4PivYmLmnv85IWWhNL4PtzcqC5mS',
+      },
+      {
+        slug: 'l2-conversation',
+        title: 'Daily Conversation — Level Two',
+        titleAr: 'المحادثات اليومية — المستوى الثاني',
+        description: 'محادثات عميقة وغير تقليدية بالإنجليزية الأمريكية الحقيقية.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'conversation',
+        coverEmoji: '💬',
+        accent: 'teal',
+        playlistId: 'PLp22-4PivYmJl_sWnCTwL1yNFhq0AM7yk',
+      },
+      {
+        slug: 'l2-thinking',
+        title: 'Thinking in English — Level Two',
+        titleAr: 'التفكير باللغة الإنجليزية — المستوى الثاني',
+        description: 'أهم الكلمات والمصطلحات للتفكير مباشرة بالإنجليزية.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'thinking',
+        coverEmoji: '🧠',
+        accent: 'orange',
+        playlistId: 'PLp22-4PivYmIsGY5eUPt67tnd2ZBfQpIw',
+      },
+      {
+        slug: 'l2-news',
+        title: 'English News — Level Two',
+        titleAr: 'نشرة الأخبار الإنجليزية — المستوى الثاني',
+        description: 'كورس الأخبار: استماع لنشرات إخبارية مترجمة.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'news',
+        coverEmoji: '📰',
+        accent: 'rose',
+        playlistId: 'PLp22-4PivYmIZtXNNriSBxmSeCK7juwS_',
+      },
+      {
+        slug: 'l2-stories',
+        title: 'Learning Through Stories — Level Two',
+        titleAr: 'التعلّم من خلال القصص — المستوى الثاني',
+        description: 'تحسين الإنجليزية عبر قراءة القصص والاستماع إليها.',
+        level: 'b1',
+        levelGroup: 2,
+        category: 'stories',
+        coverEmoji: '📚',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmJV4nIwcfSzQpG0jkqn1jci',
+      },
+    ],
+  },
+  {
+    group: 3,
+    title: 'Level Three',
+    titleAr: 'المستوى الثالث',
+    description: 'المستوى المتقدّم: قواعد مشروحة بالإنجليزية وقصص وقراءة متقدّمة.',
+    courses: [
+      {
+        slug: 'l3-grammar',
+        title: 'Grammar Explained in English — Level Three',
+        titleAr: 'القواعد مشروحة بالإنجليزية — المستوى الثالث',
+        description: 'شرح قواعد الإنجليزية بالإنجليزية للمستوى المتقدّم.',
+        level: 'b2',
+        levelGroup: 3,
+        category: 'grammar',
+        coverEmoji: '🧩',
+        accent: 'indigo',
+        playlistId: 'PLp22-4PivYmJSejQkuui_SrYWObQW7pWt',
+      },
+      {
+        slug: 'l3-stories',
+        title: 'Learning Through Stories — Level Three',
+        titleAr: 'التعلّم من خلال القصص — المستوى الثالث',
+        description: 'قصص إنجليزية متقدّمة لتطوير الفهم والقراءة.',
+        level: 'b2',
+        levelGroup: 3,
+        category: 'stories',
+        coverEmoji: '📚',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmKw-mErNjoEWnyic9U7k_NM',
+      },
+    ],
+  },
+  {
+    group: 4,
+    title: 'Level Four',
+    titleAr: 'المستوى الرابع',
+    description: 'المستوى الاحترافي: القراءة المتقدّمة، اللهجة والاستعداد للاختبارات الدولية.',
+    courses: [
+      {
+        slug: 'l4-reading',
+        title: 'Reading — Level Four',
+        titleAr: 'القراءة — المستوى الرابع',
+        description: 'قراءة نصوص إنجليزية متقدّمة بطلاقة.',
+        level: 'c1',
+        levelGroup: 4,
+        category: 'reading',
+        coverEmoji: '📖',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmKzTfbSx_nm0oCFSQ9-IpgL',
+      },
+      {
+        slug: 'l4-accent',
+        title: 'Accent Course — Level Four',
+        titleAr: 'كورس اللهجة — المستوى الرابع',
+        description: 'إتقان اللكنة الأمريكية والتحكم في مخارج الحروف.',
+        level: 'c1',
+        levelGroup: 4,
+        category: 'accent',
+        coverEmoji: '🎙️',
+        accent: 'rose',
+        playlistId: 'PLp22-4PivYmIPxfMzIpbB766dcSrbdCug',
+      },
+      {
+        slug: 'l4-ielts',
+        title: 'Professional IELTS',
+        titleAr: 'كورس آيلتس الاحترافي',
+        description: 'الاستعداد لاختبار IELTS للوصول للاحتراف.',
+        level: 'c1',
+        levelGroup: 4,
+        category: 'ielts',
+        coverEmoji: '🎓',
+        accent: 'violet',
+        playlistId: 'PLp22-4PivYmL2wmHCHXvbbZWcQaTXIBTV',
+      },
+    ],
+  },
+  {
+    group: 0,
+    title: 'Extra Library',
+    titleAr: 'مكتبة المهارات الإضافية',
+    description: 'كورسات إضافية عامة: الترجمة، الطلاقة، التعبيرات، والقراءة الحرة.',
+    courses: [
+      {
+        slug: 'x-grammar-all',
+        title: 'Grammar & Tenses — All Levels',
+        titleAr: 'قواعد اللغة وشرح الأزمنة — لجميع المستويات',
+        description: 'شرح شامل لأزمنة اللغة الإنجليزية لجميع المستويات.',
+        level: 'a2',
+        levelGroup: 0,
+        category: 'grammar',
+        coverEmoji: '⏳',
+        accent: 'indigo',
+        playlistId: 'PLp22-4PivYmLebd3vD0_WfIteVUlSA44G',
+      },
+      {
+        slug: 'x-pronunciation',
+        title: 'Pronounce Words Correctly',
+        titleAr: 'كيف تنطق الكلمات الإنجليزية بشكل صحيح',
+        description: 'تصحيح نطق الكلمات الإنجليزية الشائعة.',
+        level: 'a2',
+        levelGroup: 0,
+        category: 'phonetics',
+        coverEmoji: '🗣️',
+        accent: 'sky',
+        playlistId: 'PLp22-4PivYmLo5pyYSib-I69t2ktZjqcQ',
+      },
+      {
+        slug: 'x-translation-pro',
+        title: 'Professional Translation',
+        titleAr: 'كورس الترجمة الاحترافية',
+        description: 'تعلّم الترجمة الإنجليزية باحتراف.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'translation',
+        coverEmoji: '🈯',
+        accent: 'teal',
+        playlistId: 'PLp22-4PivYmJfGUFUJUR2IQlv8oI735hE',
+      },
+      {
+        slug: 'x-translation',
+        title: 'Translation Basics',
+        titleAr: 'كورس الترجمة',
+        description: 'أساسيات الترجمة من الإنجليزية إلى العربية.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'translation',
+        coverEmoji: '🔤',
+        accent: 'teal',
+        playlistId: 'PLp22-4PivYmISOyAhaSfLqrwDSpN6GDpG',
+      },
+      {
+        slug: 'x-slango',
+        title: 'Slango — American Slang',
+        titleAr: 'كورس Slango — العامية الأمريكية',
+        description: 'التعبيرات العامية واللهجة الأمريكية الحقيقية.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'conversation',
+        coverEmoji: '😎',
+        accent: 'orange',
+        playlistId: 'PLp22-4PivYmKsvZbvnVJo-oF4fJKVyUeV',
+      },
+      {
+        slug: 'x-phrase-it-up',
+        title: 'Phrase It Up',
+        titleAr: 'Phrase it up — التعبيرات',
+        description: 'تعلّم التعبيرات الإنجليزية الشائعة.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'conversation',
+        coverEmoji: '💡',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmJPNgoOumAWL1Hmsq_e6uUj',
+      },
+      {
+        slug: 'x-bookworm',
+        title: 'Bookworm',
+        titleAr: 'Bookworm — دودة الكتب',
+        description: 'قراءة وتعليق على كتب إنجليزية.',
+        level: 'b2',
+        levelGroup: 0,
+        category: 'reading',
+        coverEmoji: '🐛',
+        accent: 'amber',
+        playlistId: 'PLp22-4PivYmIsCOWJ0D8lXBsbKfcyc3So',
+      },
+      {
+        slug: 'x-ask-joe',
+        title: 'Ask Joe',
+        titleAr: 'Ask Joe — اسأل جو',
+        description: 'أسئلة وأجوبة حول اللغة الإنجليزية.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'conversation',
+        coverEmoji: '❓',
+        accent: 'violet',
+        playlistId: 'PLp22-4PivYmK1a3vHEw_bL_TclQUwpZsS',
+      },
+      {
+        slug: 'x-english-bits',
+        title: 'English Bits',
+        titleAr: 'سلسلة English Bits',
+        description: 'دروس قصيرة في اللغة الإنجليزية.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'general',
+        coverEmoji: '🧱',
+        accent: 'emerald',
+        playlistId: 'PLp22-4PivYmKFJFUO3JHaIAh7_Yq7Ka1_',
+      },
+      {
+        slug: 'x-i-know',
+        title: 'I Know',
+        titleAr: 'سلسلة I Know',
+        description: 'سلسلة I Know لتعليم اللغة الإنجليزية.',
+        level: 'b1',
+        levelGroup: 0,
+        category: 'general',
+        coverEmoji: '💡',
+        accent: 'sky',
+        playlistId: 'PLp22-4PivYmKTVrmFxV2EYpzzPaFs0M9F',
+      },
+      {
+        slug: 'x-wordsmith',
+        title: 'English Through American Novels',
+        titleAr: 'الإنجليزية عبر الروايات الأمريكية: Wordsmith',
+        description: 'تعلّم الإنجليزية من خلال روايات أمريكية.',
+        level: 'b2',
+        levelGroup: 0,
+        category: 'reading',
+        coverEmoji: '📕',
+        accent: 'rose',
+        playlistId: 'PLp22-4PivYmKcPVkKIQ1fj4TBhFSkQ40C',
+      },
+      {
+        slug: 'x-cartoon-story',
+        title: 'English in a Cartoon Story',
+        titleAr: 'الإنجليزية في قصة كرتونية',
+        description: 'تعلّم الإنجليزية عبر قصة كرتونية.',
+        level: 'a2',
+        levelGroup: 0,
+        category: 'stories',
+        coverEmoji: '🎬',
+        accent: 'orange',
+        playlistId: 'PLp22-4PivYmLp7sQVkZ_yHyZHQOXlZvOt',
+      },
+    ],
+  },
+];
+
+/** Flat list of every catalogued course. */
+export const CATALOG_COURSES: CatalogCourse[] = CATALOG_LEVELS.flatMap((level) => level.courses);
+
+export function catalogCourseBySlug(slug: string): CatalogCourse | null {
+  return CATALOG_COURSES.find((course) => course.slug === slug) ?? null;
+}
+
+export function catalogPlaylistUrl(playlistId: string): string {
+  return video(playlistId);
+}
