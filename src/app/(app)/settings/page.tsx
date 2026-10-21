@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: 'الإعدادات' };
 
 export default async function SettingsPage() {
   const user = await requireUser();
-  const settings = getSettings(user.id);
+  const settings = await getSettings(user.id);
   const { dict } = await getLocaleAndDictionary();
   const t = dict.settings;
 

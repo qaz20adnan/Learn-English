@@ -23,12 +23,14 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ProgressPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
-  const stats = getLearningStats(user.id);
-  const summaries = getCourseProgressSummaries(user.id);
-  const points = getPointsSummary(user.id);
-  const history = getPointsHistory(user.id, 8);
-  const quizAttempts = countQuizAttempts(user.id);
-  const favorites = countFavorites(user.id);
+  const [stats, summaries, points, history, quizAttempts, favorites] = await Promise.all([
+    getLearningStats(user.id),
+    getCourseProgressSummaries(user.id),
+    getPointsSummary(user.id),
+    getPointsHistory(user.id, 8),
+    countQuizAttempts(user.id),
+    countFavorites(user.id),
+  ]);
   const started = summaries.filter((item) => item.totalLessons > 0);
 
   return (

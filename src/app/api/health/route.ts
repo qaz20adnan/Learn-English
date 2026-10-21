@@ -1,12 +1,12 @@
-import { getDb } from '@/lib/db/client';
+import { one } from '@/lib/db/client';
 
 export async function GET() {
   try {
-    const row = getDb().prepare('SELECT COUNT(*) AS c FROM courses').get() as { c: number };
+    const row = await one<{ c: number }>('SELECT COUNT(*)::int AS c FROM courses');
     return Response.json({
       status: 'ok',
       database: 'connected',
-      courses: row.c,
+      courses: row?.c ?? 0,
       time: new Date().toISOString(),
     });
   } catch (error) {

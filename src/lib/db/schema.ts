@@ -1,20 +1,19 @@
 /**
- * SQLite schema for English Journey Academy.
+ * PostgreSQL schema for English Journey Academy.
  *
- * The schema is embedded as a TypeScript string (instead of a `.sql` file) so it
- * is bundled with the server code and works in every deployment target without
- * relying on the file system layout of the repository.
+ * The schema is embedded as a TypeScript string so it ships with the CLI
+ * scripts and works on any PostgreSQL host (Neon, Supabase, Railway, ...).
+ * Every statement is idempotent (`IF NOT EXISTS`), so `npm run db:setup` can
+ * be re-run safely.
  *
- * All statements use `IF NOT EXISTS`, which makes the whole script idempotent and
- * safe to run on every cold start as a lightweight, forward-only migration.
+ * Timestamps are stored as ISO-8601 TEXT on purpose: the application compares
+ * them lexicographically (`expires_at < now`) and the existing row mappers
+ * expect strings, which also keeps the migration from SQLite mechanical.
  */
 export const SCHEMA_SQL = /* sql */ `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
-  email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  email         TEXT NOT NULL UNIQUE,
   name          TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'STUDENT' CHECK (role IN ('STUDENT', 'ADMIN')),
@@ -31,6 +30,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -67,11 +67,13 @@ CREATE TABLE IF NOT EXISTS courses (
   cover_emoji  TEXT NOT NULL DEFAULT '📘',
   accent       TEXT NOT NULL DEFAULT 'indigo',
   playlist_id  TEXT,
-  is_published INTEGER NOT NULL DEFAULT 1,
+  is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   position     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_courses_playlist ON courses(playlist_id);
+CREATE INDEX IF NOT EXISTS idx_courses_position ON courses(position, title);
 
 CREATE TABLE IF NOT EXISTS youtube_cache (
   playlist_id TEXT PRIMARY KEY,
@@ -124,9 +126,15 @@ CREATE TABLE IF NOT EXISTS vocabulary (
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_vocabulary_course ON vocabulary(course_id);
+CREATE INDEX IF NOT EXISTS idx_vocabulary_owner ON vocabulary(created_by);
+CREATE INDEX IF NOT EXISTS idx_vocabulary_lesson ON vocabulary(lesson_id);
 
--- Many-to-many link between lessons and the shared word bank. A word lives once
--- in the vocabulary table and can be attached to any number of lessons.
+-- The shared word bank must contain each English term only once. Learner-owned
+-- words are still free to repeat a shared term, hence the partial index.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vocabulary_shared_term
+  ON vocabulary (lower(term)) WHERE created_by IS NULL;
+
+-- Many-to-many link between lessons and the shared word bank.
 CREATE TABLE IF NOT EXISTS lesson_vocabulary (
   lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
   vocab_id  TEXT NOT NULL REFERENCES vocabulary(id) ON DELETE CASCADE,
@@ -139,7 +147,7 @@ CREATE TABLE IF NOT EXISTS vocab_review (
   id               TEXT PRIMARY KEY,
   user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   vocab_id         TEXT NOT NULL REFERENCES vocabulary(id) ON DELETE CASCADE,
-  ease             REAL NOT NULL DEFAULT 2.5,
+  ease             DOUBLE PRECISION NOT NULL DEFAULT 2.5,
   interval_days    INTEGER NOT NULL DEFAULT 0,
   repetitions      INTEGER NOT NULL DEFAULT 0,
   lapses           INTEGER NOT NULL DEFAULT 0,
@@ -150,18 +158,18 @@ CREATE TABLE IF NOT EXISTS vocab_review (
 CREATE INDEX IF NOT EXISTS idx_review_due ON vocab_review(user_id, due_at);
 
 CREATE TABLE IF NOT EXISTS stories (
-  id          TEXT PRIMARY KEY,
-  slug        TEXT NOT NULL UNIQUE,
-  title       TEXT NOT NULL,
-  title_ar    TEXT,
-  level       TEXT NOT NULL DEFAULT 'a1' CHECK (level IN ('foundation', 'a1', 'a2', 'b1', 'b2', 'c1')),
-  cover_emoji TEXT NOT NULL DEFAULT '📖',
-  summary     TEXT NOT NULL DEFAULT '',
-  body        TEXT NOT NULL DEFAULT '',
-  is_published INTEGER NOT NULL DEFAULT 1,
-  position    INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  id           TEXT PRIMARY KEY,
+  slug         TEXT NOT NULL UNIQUE,
+  title        TEXT NOT NULL,
+  title_ar     TEXT,
+  level        TEXT NOT NULL DEFAULT 'a1' CHECK (level IN ('foundation', 'a1', 'a2', 'b1', 'b2', 'c1')),
+  cover_emoji  TEXT NOT NULL DEFAULT '📖',
+  summary      TEXT NOT NULL DEFAULT '',
+  body         TEXT NOT NULL DEFAULT '',
+  is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
+  position     INTEGER NOT NULL DEFAULT 0,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS story_questions (
@@ -176,13 +184,13 @@ CREATE TABLE IF NOT EXISTS story_questions (
 CREATE INDEX IF NOT EXISTS idx_questions_story ON story_questions(story_id, position);
 
 CREATE TABLE IF NOT EXISTS story_attempts (
-  id           TEXT PRIMARY KEY,
-  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  story_id     TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
-  score        INTEGER NOT NULL,
-  total        INTEGER NOT NULL,
-  answers      TEXT NOT NULL DEFAULT '[]',
-  created_at   TEXT NOT NULL
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  story_id   TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+  score      INTEGER NOT NULL,
+  total      INTEGER NOT NULL,
+  answers    TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_attempts_user ON story_attempts(user_id, story_id);
 
@@ -195,6 +203,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   detail     TEXT,
   created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
 CREATE TABLE IF NOT EXISTS vocab_favorites (
   id         TEXT PRIMARY KEY,
@@ -214,7 +223,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   level        TEXT NOT NULL DEFAULT 'a1' CHECK (level IN ('foundation', 'a1', 'a2', 'b1', 'b2', 'c1')),
   course_id    TEXT REFERENCES courses(id) ON DELETE SET NULL,
   lesson_id    TEXT REFERENCES lessons(id) ON DELETE SET NULL,
-  is_published INTEGER NOT NULL DEFAULT 1,
+  is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   position     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL

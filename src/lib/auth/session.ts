@@ -43,10 +43,10 @@ async function isSecureRequest(): Promise<boolean> {
  * Must be called from a Server Action or Route Handler (never during render).
  */
 export async function startSession(userId: string, userAgent?: string | null): Promise<void> {
-  deleteExpiredSessions();
+  await deleteExpiredSessions();
   const token = randomBytes(32).toString('base64url');
   const expiresAt = ttlDate(SESSION_TTL_DAYS);
-  createSession({ userId, tokenHash: hashToken(token), expiresAt: expiresAt.toISOString(), userAgent });
+  await createSession({ userId, tokenHash: hashToken(token), expiresAt: expiresAt.toISOString(), userAgent });
 
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
@@ -65,15 +65,15 @@ export async function getSessionUser(): Promise<PublicUser | null> {
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
-  const session = findSession(hashToken(token));
+  const session = await findSession(hashToken(token));
   if (!session) return null;
 
   if (new Date(session.expiresAt).getTime() < Date.now()) {
-    deleteSession(hashToken(token));
+    await deleteSession(hashToken(token));
     return null;
   }
 
-  const user = findUserById(session.userId);
+  const user = await findUserById(session.userId);
   if (!user) return null;
 
   return { id: user.id, email: user.email, name: user.name, role: user.role };
@@ -84,7 +84,7 @@ export async function endSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) {
-    deleteSession(hashToken(token));
+    await deleteSession(hashToken(token));
   }
   store.delete(SESSION_COOKIE);
 }

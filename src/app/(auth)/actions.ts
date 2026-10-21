@@ -27,7 +27,7 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
     return { errorKey: 'invalidInput' };
   }
 
-  const record = findUserWithSecret(parsed.data.email);
+  const record = await findUserWithSecret(parsed.data.email);
   if (!record) {
     return { errorKey: 'invalidCredentials' };
   }
@@ -38,7 +38,7 @@ export async function loginAction(_prev: AuthState, formData: FormData): Promise
   }
 
   await startSession(record.user.id);
-  logAudit({ actorId: record.user.id, action: 'login', entity: 'user', entityId: record.user.id });
+  await logAudit({ actorId: record.user.id, action: 'login', entity: 'user', entityId: record.user.id });
   redirect('/dashboard');
 }
 
@@ -52,22 +52,22 @@ export async function registerAction(_prev: AuthState, formData: FormData): Prom
     return { errorKey: 'invalidInput' };
   }
 
-  if (findUserWithSecret(parsed.data.email)) {
+  if (await findUserWithSecret(parsed.data.email)) {
     return { errorKey: 'emailTaken' };
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
   // Bootstrap rule: the very first account becomes the academy administrator.
-  const isFirstUser = countUsers() === 0;
-  const user = createUser({
+  const isFirstUser = (await countUsers()) === 0;
+  const user = await createUser({
     email: parsed.data.email,
     name: parsed.data.name,
     passwordHash,
     role: isFirstUser ? 'ADMIN' : 'STUDENT',
   });
-  ensureSettings(user.id);
+  await ensureSettings(user.id);
   await startSession(user.id);
-  logAudit({
+  await logAudit({
     actorId: user.id,
     action: 'register',
     entity: 'user',

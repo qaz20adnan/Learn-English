@@ -32,15 +32,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const lesson = getLessonById(parsed.data.lessonId);
+  const lesson = await getLessonById(parsed.data.lessonId);
   if (!lesson) {
     return NextResponse.json({ error: 'الدرس غير موجود' }, { status: 404 });
   }
 
-  const previous = getLessonProgress(user.id, lesson.id);
+  const previous = await getLessonProgress(user.id, lesson.id);
   const completed = parsed.data.completed === true || parsed.data.percent >= AUTO_COMPLETE_PERCENT;
 
-  const progress = saveLessonProgress({
+  const progress = await saveLessonProgress({
     userId: user.id,
     lessonId: lesson.id,
     positionSeconds: parsed.data.positionSeconds,
@@ -50,7 +50,12 @@ export async function POST(request: Request) {
 
   const justCompleted = completed && previous?.status !== 'COMPLETED';
   if (justCompleted) {
-    awardPoints({ userId: user.id, source: 'LESSON', sourceId: lesson.id, points: POINTS.lessonComplete });
+    await awardPoints({
+      userId: user.id,
+      source: 'LESSON',
+      sourceId: lesson.id,
+      points: POINTS.lessonComplete,
+    });
   }
 
   return NextResponse.json({ progress, awardedPoints: justCompleted ? POINTS.lessonComplete : 0 });

@@ -23,8 +23,8 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { slug, lessonSlug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
-  const course = getCourseBySlug(slug);
-  const lesson = course ? getLessonBySlug(course.id, lessonSlug) : null;
+  const course = await getCourseBySlug(slug);
+  const lesson = course ? await getLessonBySlug(course.id, lessonSlug) : null;
   return { title: lesson ? lesson.title : dict.lesson.notFound };
 }
 
@@ -35,18 +35,20 @@ export default async function LessonPage(
   const { slug, lessonSlug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
 
-  const course = getCourseBySlug(slug);
+  const course = await getCourseBySlug(slug);
   if (!course || !course.isPublished) notFound();
-  const lesson = getLessonBySlug(course.id, lessonSlug);
+  const lesson = await getLessonBySlug(course.id, lessonSlug);
   if (!lesson) notFound();
 
-  const lessons = listLessonsByCourse(course.id);
+  const lessons = await listLessonsByCourse(course.id);
   const index = lessons.findIndex((item) => item.id === lesson.id);
   const prev = index > 0 ? lessons[index - 1] : null;
   const next = index < lessons.length - 1 ? lessons[index + 1] : null;
-  const progress = getLessonProgress(user.id, lesson.id);
-  const quiz = getQuizByLessonId(lesson.id);
-  const vocabulary = listLessonVocabulary(lesson.id);
+  const [progress, quiz, vocabulary] = await Promise.all([
+    getLessonProgress(user.id, lesson.id),
+    getQuizByLessonId(lesson.id),
+    listLessonVocabulary(lesson.id),
+  ]);
 
   const clientMedia: ClientMedia | null = lesson.media
     ? {

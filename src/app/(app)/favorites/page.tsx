@@ -17,8 +17,11 @@ export default async function FavoritesPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
   const t = dict.favorites;
-  const words = listFavoriteVocabulary(user.id);
-  const favoriteIds = new Set(listFavoriteIds(user.id));
+  const [words, favoriteIdList] = await Promise.all([
+    listFavoriteVocabulary(user.id),
+    listFavoriteIds(user.id),
+  ]);
+  const favoriteIds = new Set(favoriteIdList);
 
   return (
     <div className="flex flex-col gap-6">

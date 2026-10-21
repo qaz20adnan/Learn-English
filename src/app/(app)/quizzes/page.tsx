@@ -14,8 +14,7 @@ export default async function QuizzesPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
   const t = dict.quizzes;
-  const quizzes = listQuizzes();
-  const best = listQuizBestScores(user.id);
+  const [quizzes, best] = await Promise.all([listQuizzes(), listQuizBestScores(user.id)]);
 
   return (
     <div className="flex flex-col gap-6">

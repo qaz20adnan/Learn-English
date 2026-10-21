@@ -32,12 +32,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const quiz = getQuizById(parsed.data.quizId);
+  const quiz = await getQuizById(parsed.data.quizId);
   if (!quiz || !quiz.isPublished) {
     return NextResponse.json({ error: 'الاختبار غير موجود' }, { status: 404 });
   }
 
-  const questions = listQuizQuestions(quiz.id);
+  const questions = await listQuizQuestions(quiz.id);
   if (questions.length === 0) {
     return NextResponse.json({ error: 'لا توجد أسئلة' }, { status: 400 });
   }
@@ -63,10 +63,10 @@ export async function POST(request: Request) {
     })),
   );
 
-  const previousBest = getBestQuizAttempt(user.id, quiz.id);
+  const previousBest = await getBestQuizAttempt(user.id, quiz.id);
   const awarded = pointsForImprovement(grade.scorePoints, previousBest?.scorePoints ?? 0);
 
-  const attempt = saveQuizAttempt({
+  const attempt = await saveQuizAttempt({
     userId: user.id,
     quizId: quiz.id,
     scorePoints: grade.scorePoints,
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   });
 
   if (awarded > 0) {
-    awardPoints({ userId: user.id, source: 'QUIZ', sourceId: quiz.id, points: awarded });
+    await awardPoints({ userId: user.id, source: 'QUIZ', sourceId: quiz.id, points: awarded });
   }
 
   return NextResponse.json({

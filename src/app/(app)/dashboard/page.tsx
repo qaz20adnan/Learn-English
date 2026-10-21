@@ -15,10 +15,11 @@ export const metadata: Metadata = { title: 'لوحة التعلّم' };
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [stats, summaries, points, { dict }] = await Promise.all([
-    Promise.resolve(getLearningStats(user.id)),
-    Promise.resolve(getCourseProgressSummaries(user.id)),
-    Promise.resolve(getPointsSummary(user.id)),
+  const [stats, summaries, points, courses, { dict }] = await Promise.all([
+    getLearningStats(user.id),
+    getCourseProgressSummaries(user.id),
+    getPointsSummary(user.id),
+    listCourses(),
     getLocaleAndDictionary(),
   ]);
   const t = dict.dashboard;
@@ -26,7 +27,7 @@ export default async function DashboardPage() {
   const started = summaries
     .filter((item) => item.completedLessons > 0)
     .sort((a, b) => b.percent - a.percent);
-  const recommended = started.length > 0 ? [] : listCourses().slice(0, 3);
+  const recommended = started.length > 0 ? [] : courses.slice(0, 3);
 
   return (
     <div className="flex flex-col gap-8">

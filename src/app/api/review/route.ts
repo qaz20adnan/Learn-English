@@ -31,8 +31,8 @@ export async function POST(request: Request) {
     );
   }
 
-  ensureReviewEntries(user.id);
-  const card = getReviewCard(user.id, parsed.data.vocabId);
+  await ensureReviewEntries(user.id);
+  const card = await getReviewCard(user.id, parsed.data.vocabId);
   if (!card) {
     return NextResponse.json({ error: 'البطاقة غير موجودة' }, { status: 404 });
   }
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     parsed.data.grade,
   );
 
-  saveReviewState({
+  await saveReviewState({
     userId: user.id,
     vocabId: parsed.data.vocabId,
     ease: next.ease,
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
   const awarded = pointsForGrade(parsed.data.grade);
   if (awarded > 0) {
-    awardPoints({ userId: user.id, source: 'REVIEW', sourceId: parsed.data.vocabId, points: awarded });
+    await awardPoints({ userId: user.id, source: 'REVIEW', sourceId: parsed.data.vocabId, points: awarded });
   }
 
   return NextResponse.json({

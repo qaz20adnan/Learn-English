@@ -13,14 +13,17 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function StoriesPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
-  const stories = listStories();
+  const stories = await listStories();
+  const bestScores = await Promise.all(
+    stories.map((story) => getBestStoryScore(user.id, story.id)),
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle title={dict.stories.title} description={dict.stories.description} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {stories.map((story) => {
-          const best = getBestStoryScore(user.id, story.id);
+        {stories.map((story, storyIndex) => {
+          const best = bestScores[storyIndex] ?? null;
           return (
             <Card key={story.id} className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">

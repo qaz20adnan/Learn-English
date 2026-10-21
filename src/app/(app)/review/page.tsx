@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ReviewPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
-  const due = listDueCards(user.id, 20);
+  const due = await listDueCards(user.id, 20);
 
   const cards: FlashcardItem[] = due.map((card) => ({
     vocabId: card.vocab.id,

@@ -12,7 +12,7 @@ export async function generateMetadata(
 ): Promise<Metadata> {
   const { slug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
-  const story = getStoryBySlug(slug);
+  const story = await getStoryBySlug(slug);
   return { title: story ? (story.titleAr ?? story.title) : dict.stories.notFound };
 }
 
@@ -20,16 +20,18 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
   const user = await requireUser();
   const { slug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
-  const story = getStoryBySlug(slug);
+  const story = await getStoryBySlug(slug);
   if (!story || !story.isPublished) notFound();
 
-  const questions = listStoryQuestions(story.id);
+  const [questions, best] = await Promise.all([
+    listStoryQuestions(story.id),
+    getBestStoryScore(user.id, story.id),
+  ]);
   const quiz: QuizQuestion[] = questions.map((question) => ({
     id: question.id,
     prompt: question.prompt,
     options: question.options,
   }));
-  const best = getBestStoryScore(user.id, story.id);
   const paragraphs = story.body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
 
   return (

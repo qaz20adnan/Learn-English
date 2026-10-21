@@ -7,7 +7,7 @@ import { deleteUserAction, setUserRoleAction } from '../actions';
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
   const { dict } = await getLocaleAndDictionary();
-  const users = listUsers();
+  const users = await listUsers();
   const adminCount = users.filter((user) => user.role === 'ADMIN').length;
   const t = dict.admin.usersPage;
 

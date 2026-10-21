@@ -11,25 +11,28 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:setup": "tsx scripts/setup-db.ts",
-    "db:seed": "tsx scripts/seed.ts",
-    "db:sync": "tsx scripts/sync-catalog.ts",
-    "db:verify-media": "tsx scripts/verify-media.ts"
+    "db:setup": "tsx --env-file-if-exists=.env.local scripts/setup-db.ts",
+    "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
+    "db:sync": "tsx --env-file-if-exists=.env.local scripts/sync-catalog.ts",
+    "db:verify-media": "tsx --env-file-if-exists=.env.local scripts/verify-media.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "next": "16.4.2",
     "next-themes": "^0.4.6",
+    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@tailwindcss/turbopack": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.2",

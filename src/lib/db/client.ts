@@ -1,137 +1,177 @@
-import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
-import { SCHEMA_SQL } from './schema';
+import { Pool, type PoolClient, types } from 'pg';
+
+/**
+ * PostgreSQL connection layer.
+ *
+ * The app runs on Netlify Functions, where the filesystem is ephemeral, so the
+ * database lives in a hosted PostgreSQL instance (Neon, Supabase, Railway, ...).
+ * Set `DATABASE_URL` to the connection string. For Neon use the *pooled*
+ * connection string (host contains `-pooler`).
+ */
+
+// node-postgres returns BIGINT (int8) and NUMERIC values as strings to avoid
+// precision loss. Every BIGINT here is a COUNT/SUM that comfortably fits in a
+// JS number, so parse them as numbers to keep the existing row types unchanged.
+types.setTypeParser(20, (value) => Number(value)); // int8
+types.setTypeParser(1700, (value) => Number(value)); // numeric
 
 declare global {
-  var __academyDb: DatabaseSync | undefined;
+  var __academyPool: Pool | undefined;
 }
 
-const DEFAULT_DB_PATH = './data/academy.db';
-
-export function resolveDbPath(): string {
-  const raw = process.env.DATABASE_PATH?.trim() || DEFAULT_DB_PATH;
-  if (raw === ':memory:') return raw;
-  return isAbsolute(raw) ? raw : resolve(/* turbopackIgnore: true */ process.cwd(), raw);
-}
-
-function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
-  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
-  return rows.some((row) => row.name === column);
-}
-
-/** Forward-only, idempotent migrations for databases created by older versions. */
-function migrate(db: DatabaseSync): void {
-  if (!hasColumn(db, 'vocabulary', 'created_by')) {
-    db.exec(
-      'ALTER TABLE vocabulary ADD COLUMN created_by TEXT REFERENCES users(id) ON DELETE CASCADE',
+function connectionString(): string {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL is not set. Add your PostgreSQL connection string to .env.local (and to the Netlify environment variables).',
     );
   }
-  if (!hasColumn(db, 'vocabulary', 'lesson_id')) {
-    db.exec('ALTER TABLE vocabulary ADD COLUMN lesson_id TEXT REFERENCES lessons(id) ON DELETE CASCADE');
-  }
-  if (!hasColumn(db, 'courses', 'playlist_id')) {
-    db.exec('ALTER TABLE courses ADD COLUMN playlist_id TEXT');
-  }
-  if (!hasColumn(db, 'courses', 'level_group')) {
-    db.exec('ALTER TABLE courses ADD COLUMN level_group INTEGER NOT NULL DEFAULT 1');
-  }
-  // Indexes that depend on columns added by the migrations above must be
-  // created *after* the ALTER TABLE statements, so legacy databases upgrade
-  // cleanly instead of failing on an index over a missing column.
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_courses_playlist ON courses(playlist_id);
-    CREATE INDEX IF NOT EXISTS idx_vocabulary_lesson ON vocabulary(lesson_id);
-    CREATE INDEX IF NOT EXISTS idx_vocabulary_owner ON vocabulary(created_by);
-  `);
-
-  // The shared word bank must contain each English term only once. Historical
-  // databases stored one row per lesson, which filled the bank with duplicates
-  // (e.g. "abroad" dozens of times). This forward-only migration:
-  //   1. picks a canonical row per lower-cased term,
-  //   2. moves every lesson link onto the canonical row,
-  //   3. re-points favourites and review cards, then deletes the duplicates,
-  //   4. enforces uniqueness with a partial index so learner-owned words are
-  //      still free to repeat a shared term.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS lesson_vocabulary (
-      lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-      vocab_id  TEXT NOT NULL REFERENCES vocabulary(id) ON DELETE CASCADE,
-      position  INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (lesson_id, vocab_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_lesson_vocabulary ON lesson_vocabulary(lesson_id, position);
-
-    DROP TABLE IF EXISTS _vocab_canon;
-    CREATE TEMP TABLE _vocab_canon AS
-      SELECT lower(term) AS lterm, MIN(id) AS canon_id
-      FROM vocabulary
-      WHERE created_by IS NULL
-      GROUP BY lower(term);
-
-    INSERT OR IGNORE INTO lesson_vocabulary (lesson_id, vocab_id, position)
-      SELECT v.lesson_id, c.canon_id, 0
-      FROM vocabulary v
-      JOIN _vocab_canon c ON lower(v.term) = c.lterm
-      WHERE v.lesson_id IS NOT NULL AND v.created_by IS NULL;
-
-    UPDATE OR IGNORE vocab_favorites
-      SET vocab_id = (
-        SELECT c.canon_id FROM _vocab_canon c
-        JOIN vocabulary v ON lower(v.term) = c.lterm
-        WHERE v.id = vocab_favorites.vocab_id
-      )
-      WHERE vocab_id IN (SELECT id FROM vocabulary WHERE created_by IS NULL);
-
-    UPDATE OR IGNORE vocab_review
-      SET vocab_id = (
-        SELECT c.canon_id FROM _vocab_canon c
-        JOIN vocabulary v ON lower(v.term) = c.lterm
-        WHERE v.id = vocab_review.vocab_id
-      )
-      WHERE vocab_id IN (SELECT id FROM vocabulary WHERE created_by IS NULL);
-
-    DELETE FROM vocabulary
-      WHERE created_by IS NULL
-        AND id NOT IN (SELECT canon_id FROM _vocab_canon);
-
-    -- Lesson association now lives in the lesson_vocabulary table.
-    UPDATE vocabulary SET lesson_id = NULL WHERE created_by IS NULL;
-
-    DROP TABLE IF EXISTS _vocab_canon;
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_vocabulary_shared_term
-      ON vocabulary(term COLLATE NOCASE) WHERE created_by IS NULL;
-  `);
+  return url;
 }
 
-function createDb(): DatabaseSync {
-  const path = resolveDbPath();
-  if (path !== ':memory:') {
-    mkdirSync(dirname(path), { recursive: true });
+function sslFor(url: string): { rejectUnauthorized: boolean } | undefined {
+  if (process.env.DATABASE_SSL === 'disable') return undefined;
+  if (process.env.DATABASE_SSL === 'require') return { rejectUnauthorized: false };
+  try {
+    const host = new URL(url).hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return undefined;
+  } catch {
+    // Fall through to SSL for anything we cannot parse.
   }
-  const db = new DatabaseSync(path);
-  db.exec(SCHEMA_SQL);
-  migrate(db);
-  return db;
+  return { rejectUnauthorized: false };
+}
+
+export function getPool(): Pool {
+  if (!globalThis.__academyPool) {
+    const url = connectionString();
+    globalThis.__academyPool = new Pool({
+      connectionString: url,
+      ssl: sslFor(url),
+      max: Number(process.env.DATABASE_POOL_MAX ?? 3),
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    });
+  }
+  return globalThis.__academyPool;
 }
 
 /**
- * Returns the process-wide SQLite connection.
- *
- * The instance is cached on `globalThis` so that Next.js hot-reloads in
- * development do not open a new file handle on every request.
+ * Test-only hook. Integration tests swap the pool for an embedded PostgreSQL
+ * (PGlite) so the query layer can be exercised without a network database.
  */
-export function getDb(): DatabaseSync {
-  if (!globalThis.__academyDb) {
-    globalThis.__academyDb = createDb();
-  }
-  return globalThis.__academyDb;
+interface QueryExecutor {
+  query(
+    text: string,
+    params?: unknown[],
+  ): Promise<{ rows: unknown[]; rowCount: number | null }>;
+  exec?(sql: string): Promise<void>;
 }
 
-/** Used by CLI scripts to get a fresh, explicit connection. */
-export function openDb(): DatabaseSync {
-  return createDb();
+let executor: QueryExecutor | undefined;
+
+export function setQueryExecutor(next?: QueryExecutor): void {
+  executor = next;
+}
+
+/**
+ * Translates SQLite-style positional placeholders (`?`) into PostgreSQL's
+ * `$1, $2, ...`, skipping anything inside single-quoted string literals.
+ */
+export function toPgPlaceholders(sql: string): string {
+  let index = 0;
+  let inString = false;
+  let out = '';
+  for (let i = 0; i < sql.length; i += 1) {
+    const char = sql[i];
+    if (char === "'") {
+      // SQL escapes a quote inside a literal by doubling it.
+      if (inString && sql[i + 1] === "'") {
+        out += "''";
+        i += 1;
+        continue;
+      }
+      inString = !inString;
+      out += char;
+      continue;
+    }
+    if (char === '?' && !inString) {
+      index += 1;
+      out += `$${index}`;
+      continue;
+    }
+    out += char;
+  }
+  return out;
+}
+
+/** Runs a query and returns every row. */
+export async function all<T = Record<string, unknown>>(
+  sql: string,
+  ...params: unknown[]
+): Promise<T[]> {
+  const text = toPgPlaceholders(sql);
+  if (executor) {
+    return (await executor.query(text, params)).rows as T[];
+  }
+  const result = await getPool().query(text, params);
+  return result.rows as T[];
+}
+
+/** Runs a query and returns the first row, or `undefined`. */
+export async function one<T = Record<string, unknown>>(
+  sql: string,
+  ...params: unknown[]
+): Promise<T | undefined> {
+  const rows = await all<T>(sql, ...params);
+  return rows[0];
+}
+
+/** Runs a statement and returns the number of affected rows. */
+export async function run(sql: string, ...params: unknown[]): Promise<number> {
+  const text = toPgPlaceholders(sql);
+  if (executor) {
+    return (await executor.query(text, params)).rowCount ?? 0;
+  }
+  const result = await getPool().query(text, params);
+  return result.rowCount ?? 0;
+}
+
+/** Executes a multi-statement script (schema setup, maintenance, ...). */
+export async function exec(sql: string): Promise<void> {
+  if (executor) {
+    if (executor.exec) {
+      await executor.exec(sql);
+      return;
+    }
+    await executor.query(sql);
+    return;
+  }
+  await getPool().query(sql);
+}
+
+/**
+ * Runs `fn` inside a transaction. The callback receives a query runner bound to
+ * the same client; use it for every statement that must be atomic.
+ */
+export async function transaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // Ignore rollback errors and surface the original failure.
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function nowIso(): string {

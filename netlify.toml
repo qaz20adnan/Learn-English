@@ -1,0 +1,9 @@
+[build]
+  # Schema setup is a one-time manual step (`npm run db:setup`), not part of every
+  # deploy. This keeps builds independent from the production database.
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Next.js 16 requires Node 24.
+  NODE_VERSION = "24"

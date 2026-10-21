@@ -27,7 +27,7 @@ function statusMeta(dict: Dictionary, status: LessonStatus) {
 export async function generateMetadata(props: PageProps<'/courses/[slug]'>): Promise<Metadata> {
   const { slug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
-  const course = getCourseBySlug(slug);
+  const course = await getCourseBySlug(slug);
   return { title: course ? (course.titleAr ?? course.title) : dict.courses.notFound };
 }
 
@@ -35,12 +35,14 @@ export default async function CoursePage(props: PageProps<'/courses/[slug]'>) {
   const user = await requireUser();
   const { slug } = await props.params;
   const { dict } = await getLocaleAndDictionary();
-  const course = getCourseBySlug(slug);
+  const course = await getCourseBySlug(slug);
   if (!course || !course.isPublished) notFound();
 
-  const lessons = listLessonsByCourse(course.id);
-  const progress = listCourseProgress(user.id, course.id);
-  const vocabulary = listVocabulary({ courseId: course.id, limit: 8 });
+  const [lessons, progress, vocabulary] = await Promise.all([
+    listLessonsByCourse(course.id),
+    listCourseProgress(user.id, course.id),
+    listVocabulary({ courseId: course.id, limit: 8 }),
+  ]);
   const completed = lessons.filter((lesson) => progress[lesson.id]?.status === 'COMPLETED').length;
   const percent = lessons.length === 0 ? 0 : Math.round((completed / lessons.length) * 100);
 

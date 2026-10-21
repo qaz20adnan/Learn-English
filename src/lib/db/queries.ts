@@ -1,4 +1,4 @@
-import { getDb, newId, nowIso } from './client';
+import { all, newId, nowIso, one, run } from './client';
 import { computeStreak, levelForPoints } from '../points';
 import type {
   Course,
@@ -32,7 +32,7 @@ import type {
 } from '../types';
 
 /* ------------------------------------------------------------------ */
-/* Row types (snake_case shapes returned by SQLite)                    */
+/* Row types (snake_case shapes returned by SQL)                       */
 /* ------------------------------------------------------------------ */
 
 interface UserRow {
@@ -345,64 +345,66 @@ function toStory(row: StoryRow): Story {
 /* Users & settings                                                    */
 /* ------------------------------------------------------------------ */
 
-export function countUsers(): number {
-  const row = getDb().prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number };
-  return row.c;
+export async function countUsers(): Promise<number> {
+  const row = await one<{ c: number }>('SELECT COUNT(*)::int AS c FROM users');
+  return row?.c ?? 0;
 }
 
-export function createUser(input: {
+export async function createUser(input: {
   email: string;
   name: string;
   passwordHash: string;
   role?: Role;
-}): PublicUser {
+}): Promise<PublicUser> {
   const id = newId('usr');
   const ts = nowIso();
-  getDb()
-    .prepare(
-      `INSERT INTO users (id, email, name, password_hash, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(id, input.email.toLowerCase(), input.name, input.passwordHash, input.role ?? 'STUDENT', ts, ts);
+  await run(
+    `INSERT INTO users (id, email, name, password_hash, role, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    input.email.toLowerCase(),
+    input.name,
+    input.passwordHash,
+    input.role ?? 'STUDENT',
+    ts,
+    ts,
+  );
   return { id, email: input.email.toLowerCase(), name: input.name, role: input.role ?? 'STUDENT' };
 }
 
-export function findUserWithSecret(
+export async function findUserWithSecret(
   email: string,
-): { user: PublicUser; passwordHash: string } | null {
-  const row = getDb()
-    .prepare('SELECT * FROM users WHERE email = ?')
-    .get(email.toLowerCase()) as UserRow | undefined;
+): Promise<{ user: PublicUser; passwordHash: string } | null> {
+  const row = await one<UserRow>('SELECT * FROM users WHERE email = ?', email.toLowerCase());
   if (!row) return null;
   return { user: toPublicUser(row), passwordHash: row.password_hash };
 }
 
-export function findUserById(id: string): User | null {
-  const row = getDb().prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
+export async function findUserById(id: string): Promise<User | null> {
+  const row = await one<UserRow>('SELECT * FROM users WHERE id = ?', id);
   return row ? toUser(row) : null;
 }
 
-export function listUsers(): User[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM users ORDER BY created_at DESC')
-    .all() as unknown as UserRow[];
+export async function listUsers(): Promise<User[]> {
+  const rows = await all<UserRow>('SELECT * FROM users ORDER BY created_at DESC');
   return rows.map(toUser);
 }
 
-export function updateUserRole(userId: string, role: Role): void {
-  getDb().prepare('UPDATE users SET role = ?, updated_at = ? WHERE id = ?').run(role, nowIso(), userId);
+export async function updateUserRole(userId: string, role: Role): Promise<void> {
+  await run('UPDATE users SET role = ?, updated_at = ? WHERE id = ?', role, nowIso(), userId);
 }
 
-export function deleteUser(userId: string): void {
-  getDb().prepare('DELETE FROM users WHERE id = ?').run(userId);
+export async function deleteUser(userId: string): Promise<void> {
+  await run('DELETE FROM users WHERE id = ?', userId);
 }
 
-export function getSettings(userId: string): UserSettings {
-  const row = getDb()
-    .prepare('SELECT daily_goal_minutes, theme, ui_language FROM user_settings WHERE user_id = ?')
-    .get(userId) as SettingsRow | undefined;
+export async function getSettings(userId: string): Promise<UserSettings> {
+  const row = await one<SettingsRow>(
+    'SELECT daily_goal_minutes, theme, ui_language FROM user_settings WHERE user_id = ?',
+    userId,
+  );
   if (!row) {
-    ensureSettings(userId);
+    await ensureSettings(userId);
     return { dailyGoalMinutes: 15, theme: 'system', uiLanguage: 'ar' };
   }
   return {
@@ -412,26 +414,32 @@ export function getSettings(userId: string): UserSettings {
   };
 }
 
-export function ensureSettings(userId: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO user_settings (user_id, daily_goal_minutes, theme, ui_language, updated_at)
-       VALUES (?, 15, 'system', 'ar', ?)
-       ON CONFLICT(user_id) DO NOTHING`,
-    )
-    .run(userId, nowIso());
+export async function ensureSettings(userId: string): Promise<void> {
+  await run(
+    `INSERT INTO user_settings (user_id, daily_goal_minutes, theme, ui_language, updated_at)
+     VALUES (?, 15, 'system', 'ar', ?)
+     ON CONFLICT(user_id) DO NOTHING`,
+    userId,
+    nowIso(),
+  );
 }
 
-export function updateSettings(userId: string, patch: Partial<UserSettings>): UserSettings {
-  const current = getSettings(userId);
+export async function updateSettings(
+  userId: string,
+  patch: Partial<UserSettings>,
+): Promise<UserSettings> {
+  const current = await getSettings(userId);
   const next: UserSettings = { ...current, ...patch };
-  getDb()
-    .prepare(
-      `UPDATE user_settings
-       SET daily_goal_minutes = ?, theme = ?, ui_language = ?, updated_at = ?
-       WHERE user_id = ?`,
-    )
-    .run(next.dailyGoalMinutes, next.theme, next.uiLanguage, nowIso(), userId);
+  await run(
+    `UPDATE user_settings
+     SET daily_goal_minutes = ?, theme = ?, ui_language = ?, updated_at = ?
+     WHERE user_id = ?`,
+    next.dailyGoalMinutes,
+    next.theme,
+    next.uiLanguage,
+    nowIso(),
+    userId,
+  );
   return next;
 }
 
@@ -439,137 +447,148 @@ export function updateSettings(userId: string, patch: Partial<UserSettings>): Us
 /* Sessions                                                            */
 /* ------------------------------------------------------------------ */
 
-export function createSession(input: {
+export async function createSession(input: {
   userId: string;
   tokenHash: string;
   expiresAt: string;
   userAgent?: string | null;
-}): void {
-  getDb()
-    .prepare(
-      `INSERT INTO sessions (id, user_id, token_hash, user_agent, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      newId('ses'),
-      input.userId,
-      input.tokenHash,
-      input.userAgent ?? null,
-      input.expiresAt,
-      nowIso(),
-    );
+}): Promise<void> {
+  await run(
+    `INSERT INTO sessions (id, user_id, token_hash, user_agent, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    newId('ses'),
+    input.userId,
+    input.tokenHash,
+    input.userAgent ?? null,
+    input.expiresAt,
+    nowIso(),
+  );
 }
 
-export function findSession(tokenHash: string): { userId: string; expiresAt: string } | null {
-  const row = getDb()
-    .prepare('SELECT user_id, expires_at FROM sessions WHERE token_hash = ?')
-    .get(tokenHash) as SessionRow | undefined;
+export async function findSession(
+  tokenHash: string,
+): Promise<{ userId: string; expiresAt: string } | null> {
+  const row = await one<SessionRow>(
+    'SELECT user_id, expires_at FROM sessions WHERE token_hash = ?',
+    tokenHash,
+  );
   if (!row) return null;
   return { userId: row.user_id, expiresAt: row.expires_at };
 }
 
-export function deleteSession(tokenHash: string): void {
-  getDb().prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
+export async function deleteSession(tokenHash: string): Promise<void> {
+  await run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);
 }
 
-export function deleteExpiredSessions(): void {
-  getDb().prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowIso());
+export async function deleteExpiredSessions(): Promise<void> {
+  await run('DELETE FROM sessions WHERE expires_at < ?', nowIso());
 }
 
 /* ------------------------------------------------------------------ */
 /* Media                                                               */
 /* ------------------------------------------------------------------ */
 
-export function listMedia(): Media[] {
-  const rows = getDb().prepare('SELECT * FROM media ORDER BY created_at DESC').all() as unknown as MediaRow[];
+export async function listMedia(): Promise<Media[]> {
+  const rows = await all<MediaRow>('SELECT * FROM media ORDER BY created_at DESC');
   return rows.map(toMedia);
 }
 
-export function getMediaById(id: string): Media | null {
-  const row = getDb().prepare('SELECT * FROM media WHERE id = ?').get(id) as MediaRow | undefined;
+export async function getMediaById(id: string): Promise<Media | null> {
+  const row = await one<MediaRow>('SELECT * FROM media WHERE id = ?', id);
   return row ? toMedia(row) : null;
 }
 
-export function updateMediaVerification(
+export async function updateMediaVerification(
   id: string,
   status: VerificationStatus,
   note: string | null,
-): void {
-  getDb()
-    .prepare(
-      `UPDATE media
-       SET verification_status = ?, verification_note = ?, last_checked_at = ?, updated_at = ?
-       WHERE id = ?`,
-    )
-    .run(status, note, nowIso(), nowIso(), id);
+): Promise<void> {
+  await run(
+    `UPDATE media
+     SET verification_status = ?, verification_note = ?, last_checked_at = ?, updated_at = ?
+     WHERE id = ?`,
+    status,
+    note,
+    nowIso(),
+    nowIso(),
+    id,
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* Courses & lessons                                                   */
 /* ------------------------------------------------------------------ */
 
-export function listCourses(includeUnpublished = false): Course[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT c.*, (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id) AS lesson_count
-       FROM courses c
-       ${includeUnpublished ? '' : 'WHERE c.is_published = 1'}
-       ORDER BY c.position ASC, c.title ASC`,
-    )
-    .all() as unknown as CourseRow[];
+export async function listCourses(includeUnpublished = false): Promise<Course[]> {
+  const rows = await all<CourseRow>(
+    `SELECT c.*, (SELECT COUNT(*)::int FROM lessons l WHERE l.course_id = c.id) AS lesson_count
+     FROM courses c
+     ${includeUnpublished ? '' : 'WHERE c.is_published = 1'}
+     ORDER BY c.position ASC, c.title ASC`,
+  );
   return rows.map(toCourse);
 }
 
-export function getCourseBySlug(slug: string): Course | null {
-  const row = getDb().prepare('SELECT * FROM courses WHERE slug = ?').get(slug) as
-    | CourseRow
-    | undefined;
+export async function getCourseBySlug(slug: string): Promise<Course | null> {
+  const row = await one<CourseRow>('SELECT * FROM courses WHERE slug = ?', slug);
   return row ? toCourse(row) : null;
 }
 
-export function getCourseById(id: string): Course | null {
-  const row = getDb().prepare('SELECT * FROM courses WHERE id = ?').get(id) as CourseRow | undefined;
+export async function getCourseById(id: string): Promise<Course | null> {
+  const row = await one<CourseRow>('SELECT * FROM courses WHERE id = ?', id);
   return row ? toCourse(row) : null;
 }
 
-export function listLessonsByCourse(courseId: string): Lesson[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY position ASC')
-    .all(courseId) as unknown as LessonRow[];
+export async function listLessonsByCourse(courseId: string): Promise<Lesson[]> {
+  const rows = await all<LessonRow>(
+    'SELECT * FROM lessons WHERE course_id = ? ORDER BY position ASC',
+    courseId,
+  );
   return rows.map(toLesson);
 }
 
-export function getLessonBySlug(courseId: string, slug: string): LessonWithMedia | null {
-  const row = getDb()
-    .prepare('SELECT * FROM lessons WHERE course_id = ? AND slug = ?')
-    .get(courseId, slug) as LessonRow | undefined;
+export async function getLessonBySlug(
+  courseId: string,
+  slug: string,
+): Promise<LessonWithMedia | null> {
+  const row = await one<LessonRow>(
+    'SELECT * FROM lessons WHERE course_id = ? AND slug = ?',
+    courseId,
+    slug,
+  );
   if (!row) return null;
-  const media = row.media_id ? getMediaById(row.media_id) : null;
+  const media = row.media_id ? await getMediaById(row.media_id) : null;
   return { ...toLesson(row), media };
 }
 
-export function getLessonById(id: string): LessonWithMedia | null {
-  const row = getDb().prepare('SELECT * FROM lessons WHERE id = ?').get(id) as LessonRow | undefined;
+export async function getLessonById(id: string): Promise<LessonWithMedia | null> {
+  const row = await one<LessonRow>('SELECT * FROM lessons WHERE id = ?', id);
   if (!row) return null;
-  const media = row.media_id ? getMediaById(row.media_id) : null;
+  const media = row.media_id ? await getMediaById(row.media_id) : null;
   return { ...toLesson(row), media };
 }
 
-export function countLessonsByCourse(courseId: string): number {
-  const row = getDb()
-    .prepare('SELECT COUNT(*) AS c FROM lessons WHERE course_id = ?')
-    .get(courseId) as { c: number };
-  return row.c;
+export async function countLessonsByCourse(courseId: string): Promise<number> {
+  const row = await one<{ c: number }>(
+    'SELECT COUNT(*)::int AS c FROM lessons WHERE course_id = ?',
+    courseId,
+  );
+  return row?.c ?? 0;
 }
 
 /* ------------------------------------------------------------------ */
 /* Lesson progress                                                     */
 /* ------------------------------------------------------------------ */
 
-export function getLessonProgress(userId: string, lessonId: string): LessonProgress | null {
-  const row = getDb()
-    .prepare('SELECT * FROM lesson_progress WHERE user_id = ? AND lesson_id = ?')
-    .get(userId, lessonId) as ProgressRow | undefined;
+export async function getLessonProgress(
+  userId: string,
+  lessonId: string,
+): Promise<LessonProgress | null> {
+  const row = await one<ProgressRow>(
+    'SELECT * FROM lesson_progress WHERE user_id = ? AND lesson_id = ?',
+    userId,
+    lessonId,
+  );
   if (!row) return null;
   return {
     lessonId: row.lesson_id,
@@ -581,48 +600,50 @@ export function getLessonProgress(userId: string, lessonId: string): LessonProgr
   };
 }
 
-export function saveLessonProgress(input: {
+export async function saveLessonProgress(input: {
   userId: string;
   lessonId: string;
   positionSeconds: number;
   percent: number;
   status: ProgressStatus;
-}): LessonProgress {
+}): Promise<LessonProgress> {
   const ts = nowIso();
   const completedAt = input.status === 'COMPLETED' ? ts : null;
-  getDb()
-    .prepare(
-      `INSERT INTO lesson_progress
-         (id, user_id, lesson_id, status, position_seconds, percent, updated_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, lesson_id) DO UPDATE SET
-         status = excluded.status,
-         position_seconds = excluded.position_seconds,
-         percent = MAX(lesson_progress.percent, excluded.percent),
-         updated_at = excluded.updated_at,
-         completed_at = COALESCE(lesson_progress.completed_at, excluded.completed_at)`,
-    )
-    .run(
-      newId('prg'),
-      input.userId,
-      input.lessonId,
-      input.status,
-      Math.max(0, Math.round(input.positionSeconds)),
-      Math.min(100, Math.max(0, Math.round(input.percent))),
-      ts,
-      completedAt,
-    );
-  return getLessonProgress(input.userId, input.lessonId)!;
+  await run(
+    `INSERT INTO lesson_progress
+       (id, user_id, lesson_id, status, position_seconds, percent, updated_at, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, lesson_id) DO UPDATE SET
+       status = excluded.status,
+       position_seconds = excluded.position_seconds,
+       percent = GREATEST(lesson_progress.percent, excluded.percent),
+       updated_at = excluded.updated_at,
+       completed_at = COALESCE(lesson_progress.completed_at, excluded.completed_at)`,
+    newId('prg'),
+    input.userId,
+    input.lessonId,
+    input.status,
+    Math.max(0, Math.round(input.positionSeconds)),
+    Math.min(100, Math.max(0, Math.round(input.percent))),
+    ts,
+    completedAt,
+  );
+  const saved = await getLessonProgress(input.userId, input.lessonId);
+  if (!saved) throw new Error('Failed to save lesson progress');
+  return saved;
 }
 
-export function listCourseProgress(userId: string, courseId: string): Record<string, LessonProgress> {
-  const rows = getDb()
-    .prepare(
-      `SELECT p.* FROM lesson_progress p
-       JOIN lessons l ON l.id = p.lesson_id
-       WHERE p.user_id = ? AND l.course_id = ?`,
-    )
-    .all(userId, courseId) as unknown as ProgressRow[];
+export async function listCourseProgress(
+  userId: string,
+  courseId: string,
+): Promise<Record<string, LessonProgress>> {
+  const rows = await all<ProgressRow>(
+    `SELECT p.* FROM lesson_progress p
+     JOIN lessons l ON l.id = p.lesson_id
+     WHERE p.user_id = ? AND l.course_id = ?`,
+    userId,
+    courseId,
+  );
   const map: Record<string, LessonProgress> = {};
   for (const row of rows) {
     map[row.lesson_id] = {
@@ -637,28 +658,32 @@ export function listCourseProgress(userId: string, courseId: string): Record<str
   return map;
 }
 
-export function getCourseProgressSummaries(userId: string): CourseProgressSummary[] {
-  const courses = listCourses();
-  return courses.map((course) => {
-    const row = getDb()
-      .prepare(
+export async function getCourseProgressSummaries(
+  userId: string,
+): Promise<CourseProgressSummary[]> {
+  const courses = await listCourses();
+  return Promise.all(
+    courses.map(async (course) => {
+      const row = await one<{ total: number; completed: number | null }>(
         `SELECT
-           COUNT(l.id) AS total,
-           SUM(CASE WHEN p.status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed
+           COUNT(l.id)::int AS total,
+           SUM(CASE WHEN p.status = 'COMPLETED' THEN 1 ELSE 0 END)::int AS completed
          FROM lessons l
          LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.user_id = ?
          WHERE l.course_id = ?`,
-      )
-      .get(userId, course.id) as { total: number; completed: number | null };
-    const total = row.total ?? 0;
-    const completed = row.completed ?? 0;
-    return {
-      course,
-      totalLessons: total,
-      completedLessons: completed,
-      percent: total === 0 ? 0 : Math.round((completed / total) * 100),
-    };
-  });
+        userId,
+        course.id,
+      );
+      const total = row?.total ?? 0;
+      const completed = row?.completed ?? 0;
+      return {
+        course,
+        totalLessons: total,
+        completedLessons: completed,
+        percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+      };
+    }),
+  );
 }
 
 export interface LearningStats {
@@ -670,41 +695,39 @@ export interface LearningStats {
   reviewsDue: number;
 }
 
-export function getLearningStats(userId: string): LearningStats {
-  const db = getDb();
-  const completed = db
-    .prepare(
-      `SELECT COUNT(*) AS c, COALESCE(SUM(l.duration_minutes), 0) AS m
+export async function getLearningStats(userId: string): Promise<LearningStats> {
+  const [completed, inProgress, started, vocab, due] = await Promise.all([
+    one<{ c: number; m: number }>(
+      `SELECT COUNT(*)::int AS c, COALESCE(SUM(l.duration_minutes), 0)::int AS m
        FROM lesson_progress p JOIN lessons l ON l.id = p.lesson_id
        WHERE p.user_id = ? AND p.status = 'COMPLETED'`,
-    )
-    .get(userId) as { c: number; m: number };
-  const inProgress = db
-    .prepare(
-      `SELECT COUNT(*) AS c FROM lesson_progress WHERE user_id = ? AND status = 'IN_PROGRESS'`,
-    )
-    .get(userId) as { c: number };
-  const started = db
-    .prepare(
-      `SELECT COUNT(DISTINCT l.course_id) AS c
+      userId,
+    ),
+    one<{ c: number }>(
+      `SELECT COUNT(*)::int AS c FROM lesson_progress WHERE user_id = ? AND status = 'IN_PROGRESS'`,
+      userId,
+    ),
+    one<{ c: number }>(
+      `SELECT COUNT(DISTINCT l.course_id)::int AS c
        FROM lesson_progress p JOIN lessons l ON l.id = p.lesson_id
        WHERE p.user_id = ?`,
-    )
-    .get(userId) as { c: number };
-  const vocab = db
-    .prepare('SELECT COUNT(*) AS c FROM vocab_review WHERE user_id = ?')
-    .get(userId) as { c: number };
-  const due = db
-    .prepare('SELECT COUNT(*) AS c FROM vocab_review WHERE user_id = ? AND due_at <= ?')
-    .get(userId, nowIso()) as { c: number };
+      userId,
+    ),
+    one<{ c: number }>('SELECT COUNT(*)::int AS c FROM vocab_review WHERE user_id = ?', userId),
+    one<{ c: number }>(
+      'SELECT COUNT(*)::int AS c FROM vocab_review WHERE user_id = ? AND due_at <= ?',
+      userId,
+      nowIso(),
+    ),
+  ]);
 
   return {
-    lessonsCompleted: completed.c,
-    lessonsInProgress: inProgress.c,
-    minutesLearned: completed.m ?? 0,
-    coursesStarted: started.c,
-    vocabularyTracked: vocab.c,
-    reviewsDue: due.c,
+    lessonsCompleted: completed?.c ?? 0,
+    lessonsInProgress: inProgress?.c ?? 0,
+    minutesLearned: completed?.m ?? 0,
+    coursesStarted: started?.c ?? 0,
+    vocabularyTracked: vocab?.c ?? 0,
+    reviewsDue: due?.c ?? 0,
   };
 }
 
@@ -719,8 +742,7 @@ export interface VocabularyQuery {
 }
 
 /** Shared (non user-owned) vocabulary — the public word bank, randomly ordered. */
-export function listVocabulary(options: VocabularyQuery = {}): Vocabulary[] {
-  const db = getDb();
+export async function listVocabulary(options: VocabularyQuery = {}): Promise<Vocabulary[]> {
   const clauses = ['created_by IS NULL'];
   const params: (string | number)[] = [];
   if (options.courseId) {
@@ -732,45 +754,46 @@ export function listVocabulary(options: VocabularyQuery = {}): Vocabulary[] {
     sql += ' LIMIT ?';
     params.push(options.limit);
   }
-  const rows = db.prepare(sql).all(...params) as unknown as VocabularyRow[];
+  const rows = await all<VocabularyRow>(sql, ...params);
   return rows.map(toVocabulary);
 }
 
 /** Number of words in the shared bank (the whole bank, before any sampling). */
-export function countVocabulary(courseId?: string): number {
-  const row = (
-    courseId
-      ? getDb()
-          .prepare('SELECT COUNT(*) AS c FROM vocabulary WHERE created_by IS NULL AND course_id = ?')
-          .get(courseId)
-      : getDb().prepare('SELECT COUNT(*) AS c FROM vocabulary WHERE created_by IS NULL').get()
-  ) as { c: number };
-  return row.c;
+export async function countVocabulary(courseId?: string): Promise<number> {
+  const row = courseId
+    ? await one<{ c: number }>(
+        'SELECT COUNT(*)::int AS c FROM vocabulary WHERE created_by IS NULL AND course_id = ?',
+        courseId,
+      )
+    : await one<{ c: number }>(
+        'SELECT COUNT(*)::int AS c FROM vocabulary WHERE created_by IS NULL',
+      );
+  return row?.c ?? 0;
 }
 
 /** Words created by a single learner ("my saved words"). */
-export function listUserVocabulary(userId: string): Vocabulary[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM vocabulary WHERE created_by = ? ORDER BY created_at DESC')
-    .all(userId) as unknown as VocabularyRow[];
+export async function listUserVocabulary(userId: string): Promise<Vocabulary[]> {
+  const rows = await all<VocabularyRow>(
+    'SELECT * FROM vocabulary WHERE created_by = ? ORDER BY created_at DESC',
+    userId,
+  );
   return rows.map(toVocabulary);
 }
 
-export function countUserVocabulary(userId: string): number {
-  const row = getDb()
-    .prepare('SELECT COUNT(*) AS c FROM vocabulary WHERE created_by = ?')
-    .get(userId) as { c: number };
-  return row.c;
+export async function countUserVocabulary(userId: string): Promise<number> {
+  const row = await one<{ c: number }>(
+    'SELECT COUNT(*)::int AS c FROM vocabulary WHERE created_by = ?',
+    userId,
+  );
+  return row?.c ?? 0;
 }
 
-export function getVocabularyById(id: string): Vocabulary | null {
-  const row = getDb().prepare('SELECT * FROM vocabulary WHERE id = ?').get(id) as
-    | VocabularyRow
-    | undefined;
+export async function getVocabularyById(id: string): Promise<Vocabulary | null> {
+  const row = await one<VocabularyRow>('SELECT * FROM vocabulary WHERE id = ?', id);
   return row ? toVocabulary(row) : null;
 }
 
-export function createVocabulary(input: {
+export async function createVocabulary(input: {
   courseId?: string | null;
   lessonId?: string | null;
   term: string;
@@ -779,38 +802,36 @@ export function createVocabulary(input: {
   phonetic?: string | null;
   example?: string;
   createdBy?: string | null;
-}): Vocabulary {
+}): Promise<Vocabulary> {
   const id = newId('voc');
-  getDb()
-    .prepare(
-      `INSERT INTO vocabulary (id, course_id, lesson_id, term, translation, part_of_speech, phonetic, example, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      input.courseId ?? null,
-      input.lessonId ?? null,
-      input.term,
-      input.translation,
-      input.partOfSpeech ?? 'noun',
-      input.phonetic ?? null,
-      input.example ?? '',
-      input.createdBy ?? null,
-      nowIso(),
-    );
-  return getVocabularyById(id)!;
+  await run(
+    `INSERT INTO vocabulary (id, course_id, lesson_id, term, translation, part_of_speech, phonetic, example, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    input.courseId ?? null,
+    input.lessonId ?? null,
+    input.term,
+    input.translation,
+    input.partOfSpeech ?? 'noun',
+    input.phonetic ?? null,
+    input.example ?? '',
+    input.createdBy ?? null,
+    nowIso(),
+  );
+  const created = await getVocabularyById(id);
+  if (!created) throw new Error('Failed to create vocabulary');
+  return created;
 }
 
 /** Vocabulary attached to a single lesson (via the shared word bank). */
-export function listLessonVocabulary(lessonId: string): Vocabulary[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT v.* FROM vocabulary v
-       JOIN lesson_vocabulary lv ON lv.vocab_id = v.id
-       WHERE lv.lesson_id = ?
-       ORDER BY lv.position ASC, v.term ASC`,
-    )
-    .all(lessonId) as unknown as VocabularyRow[];
+export async function listLessonVocabulary(lessonId: string): Promise<Vocabulary[]> {
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* FROM vocabulary v
+     JOIN lesson_vocabulary lv ON lv.vocab_id = v.id
+     WHERE lv.lesson_id = ?
+     ORDER BY lv.position ASC, v.term ASC`,
+    lessonId,
+  );
   return rows.map(toVocabulary);
 }
 
@@ -818,26 +839,28 @@ export function listLessonVocabulary(lessonId: string): Vocabulary[] {
 /* Favorites                                                           */
 /* ------------------------------------------------------------------ */
 
-export function addFavorite(userId: string, vocabId: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO vocab_favorites (id, user_id, vocab_id, created_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(user_id, vocab_id) DO NOTHING`,
-    )
-    .run(newId('fav'), userId, vocabId, nowIso());
+export async function addFavorite(userId: string, vocabId: string): Promise<void> {
+  await run(
+    `INSERT INTO vocab_favorites (id, user_id, vocab_id, created_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, vocab_id) DO NOTHING`,
+    newId('fav'),
+    userId,
+    vocabId,
+    nowIso(),
+  );
 }
 
-export function removeFavorite(userId: string, vocabId: string): void {
-  getDb()
-    .prepare('DELETE FROM vocab_favorites WHERE user_id = ? AND vocab_id = ?')
-    .run(userId, vocabId);
+export async function removeFavorite(userId: string, vocabId: string): Promise<void> {
+  await run('DELETE FROM vocab_favorites WHERE user_id = ? AND vocab_id = ?', userId, vocabId);
 }
 
-export function isFavorite(userId: string, vocabId: string): boolean {
-  const row = getDb()
-    .prepare('SELECT 1 AS ok FROM vocab_favorites WHERE user_id = ? AND vocab_id = ?')
-    .get(userId, vocabId) as { ok: number } | undefined;
+export async function isFavorite(userId: string, vocabId: string): Promise<boolean> {
+  const row = await one<{ ok: number }>(
+    'SELECT 1 AS ok FROM vocab_favorites WHERE user_id = ? AND vocab_id = ?',
+    userId,
+    vocabId,
+  );
   return Boolean(row);
 }
 
@@ -845,33 +868,35 @@ export function isFavorite(userId: string, vocabId: string): boolean {
  * A learner's favorites list: words they bookmarked from the shared bank plus
  * every word they created themselves.
  */
-export function listFavoriteVocabulary(userId: string): Vocabulary[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT v.* FROM vocabulary v
-       LEFT JOIN vocab_favorites f ON f.vocab_id = v.id AND f.user_id = ?
-       WHERE f.id IS NOT NULL OR v.created_by = ?
-       ORDER BY v.term`,
-    )
-    .all(userId, userId) as unknown as VocabularyRow[];
+export async function listFavoriteVocabulary(userId: string): Promise<Vocabulary[]> {
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* FROM vocabulary v
+     LEFT JOIN vocab_favorites f ON f.vocab_id = v.id AND f.user_id = ?
+     WHERE f.id IS NOT NULL OR v.created_by = ?
+     ORDER BY v.term`,
+    userId,
+    userId,
+  );
   return rows.map(toVocabulary);
 }
 
-export function countFavorites(userId: string): number {
-  const row = getDb()
-    .prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM vocab_favorites WHERE user_id = ?) +
-         (SELECT COUNT(*) FROM vocabulary WHERE created_by = ?) AS c`,
-    )
-    .get(userId, userId) as { c: number };
-  return row.c;
+export async function countFavorites(userId: string): Promise<number> {
+  const row = await one<{ c: number }>(
+    `SELECT (
+       (SELECT COUNT(*) FROM vocab_favorites WHERE user_id = ?) +
+       (SELECT COUNT(*) FROM vocabulary WHERE created_by = ?)
+     )::int AS c`,
+    userId,
+    userId,
+  );
+  return row?.c ?? 0;
 }
 
-export function listFavoriteIds(userId: string): string[] {
-  const rows = getDb()
-    .prepare('SELECT vocab_id FROM vocab_favorites WHERE user_id = ?')
-    .all(userId) as unknown as { vocab_id: string }[];
+export async function listFavoriteIds(userId: string): Promise<string[]> {
+  const rows = await all<{ vocab_id: string }>(
+    'SELECT vocab_id FROM vocab_favorites WHERE user_id = ?',
+    userId,
+  );
   return rows.map((row) => row.vocab_id);
 }
 
@@ -880,31 +905,34 @@ export function listFavoriteIds(userId: string): string[] {
 /* ------------------------------------------------------------------ */
 
 /** Creates review rows for shared words plus the learner's own words. */
-export function ensureReviewEntries(userId: string): void {
-  const db = getDb();
-  const ts = nowIso();
-  db.prepare(
+export async function ensureReviewEntries(userId: string): Promise<void> {
+  await run(
     `INSERT INTO vocab_review (id, user_id, vocab_id, ease, interval_days, repetitions, lapses, due_at, last_reviewed_at)
-     SELECT 'rev_' || lower(hex(randomblob(10))), ?, v.id, 2.5, 0, 0, 0, ?, NULL
+     SELECT 'rev_' || substr(md5(random()::text), 1, 16), ?, v.id, 2.5, 0, 0, 0, ?, NULL
      FROM vocabulary v
      WHERE (v.created_by IS NULL OR v.created_by = ?)
        AND NOT EXISTS (
          SELECT 1 FROM vocab_review r WHERE r.user_id = ? AND r.vocab_id = v.id
        )`,
-  ).run(userId, ts, userId, userId);
+    userId,
+    nowIso(),
+    userId,
+    userId,
+  );
 }
 
-export function listDueCards(userId: string, limit = 20): ReviewCard[] {
-  ensureReviewEntries(userId);
-  const rows = getDb()
-    .prepare(
-      `SELECT v.*, r.ease, r.interval_days, r.repetitions, r.lapses, r.due_at, r.last_reviewed_at
-       FROM vocab_review r JOIN vocabulary v ON v.id = r.vocab_id
-       WHERE r.user_id = ? AND r.due_at <= ?
-       ORDER BY r.due_at ASC
-       LIMIT ?`,
-    )
-    .all(userId, nowIso(), limit) as unknown as ReviewRow[];
+export async function listDueCards(userId: string, limit = 20): Promise<ReviewCard[]> {
+  await ensureReviewEntries(userId);
+  const rows = await all<ReviewRow>(
+    `SELECT v.*, r.ease, r.interval_days, r.repetitions, r.lapses, r.due_at, r.last_reviewed_at
+     FROM vocab_review r JOIN vocabulary v ON v.id = r.vocab_id
+     WHERE r.user_id = ? AND r.due_at <= ?
+     ORDER BY r.due_at ASC
+     LIMIT ?`,
+    userId,
+    nowIso(),
+    limit,
+  );
   return rows.map((row) => ({
     vocab: toVocabulary(row),
     ease: row.ease,
@@ -916,14 +944,14 @@ export function listDueCards(userId: string, limit = 20): ReviewCard[] {
   }));
 }
 
-export function getReviewCard(userId: string, vocabId: string): ReviewCard | null {
-  const row = getDb()
-    .prepare(
-      `SELECT v.*, r.ease, r.interval_days, r.repetitions, r.lapses, r.due_at, r.last_reviewed_at
-       FROM vocab_review r JOIN vocabulary v ON v.id = r.vocab_id
-       WHERE r.user_id = ? AND r.vocab_id = ?`,
-    )
-    .get(userId, vocabId) as ReviewRow | undefined;
+export async function getReviewCard(userId: string, vocabId: string): Promise<ReviewCard | null> {
+  const row = await one<ReviewRow>(
+    `SELECT v.*, r.ease, r.interval_days, r.repetitions, r.lapses, r.due_at, r.last_reviewed_at
+     FROM vocab_review r JOIN vocabulary v ON v.id = r.vocab_id
+     WHERE r.user_id = ? AND r.vocab_id = ?`,
+    userId,
+    vocabId,
+  );
   if (!row) return null;
   return {
     vocab: toVocabulary(row),
@@ -936,7 +964,7 @@ export function getReviewCard(userId: string, vocabId: string): ReviewCard | nul
   };
 }
 
-export function saveReviewState(input: {
+export async function saveReviewState(input: {
   userId: string;
   vocabId: string;
   ease: number;
@@ -944,66 +972,62 @@ export function saveReviewState(input: {
   repetitions: number;
   lapses: number;
   dueAt: string;
-}): void {
-  getDb()
-    .prepare(
-      `INSERT INTO vocab_review
-         (id, user_id, vocab_id, ease, interval_days, repetitions, lapses, due_at, last_reviewed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id, vocab_id) DO UPDATE SET
-         ease = excluded.ease,
-         interval_days = excluded.interval_days,
-         repetitions = excluded.repetitions,
-         lapses = excluded.lapses,
-         due_at = excluded.due_at,
-         last_reviewed_at = excluded.last_reviewed_at`,
-    )
-    .run(
-      newId('rev'),
-      input.userId,
-      input.vocabId,
-      input.ease,
-      input.intervalDays,
-      input.repetitions,
-      input.lapses,
-      input.dueAt,
-      nowIso(),
-    );
+}): Promise<void> {
+  await run(
+    `INSERT INTO vocab_review
+       (id, user_id, vocab_id, ease, interval_days, repetitions, lapses, due_at, last_reviewed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, vocab_id) DO UPDATE SET
+       ease = excluded.ease,
+       interval_days = excluded.interval_days,
+       repetitions = excluded.repetitions,
+       lapses = excluded.lapses,
+       due_at = excluded.due_at,
+       last_reviewed_at = excluded.last_reviewed_at`,
+    newId('rev'),
+    input.userId,
+    input.vocabId,
+    input.ease,
+    input.intervalDays,
+    input.repetitions,
+    input.lapses,
+    input.dueAt,
+    nowIso(),
+  );
 }
 
-export function countDueReviews(userId: string): number {
-  ensureReviewEntries(userId);
-  const row = getDb()
-    .prepare('SELECT COUNT(*) AS c FROM vocab_review WHERE user_id = ? AND due_at <= ?')
-    .get(userId, nowIso()) as { c: number };
-  return row.c;
+export async function countDueReviews(userId: string): Promise<number> {
+  await ensureReviewEntries(userId);
+  const row = await one<{ c: number }>(
+    'SELECT COUNT(*)::int AS c FROM vocab_review WHERE user_id = ? AND due_at <= ?',
+    userId,
+    nowIso(),
+  );
+  return row?.c ?? 0;
 }
 
 /* ------------------------------------------------------------------ */
 /* Stories & quizzes                                                   */
 /* ------------------------------------------------------------------ */
 
-export function listStories(): Story[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT s.*, (SELECT COUNT(*) FROM story_questions q WHERE q.story_id = s.id) AS question_count
-       FROM stories s WHERE s.is_published = 1 ORDER BY s.position ASC, s.title ASC`,
-    )
-    .all() as unknown as StoryRow[];
+export async function listStories(): Promise<Story[]> {
+  const rows = await all<StoryRow>(
+    `SELECT s.*, (SELECT COUNT(*)::int FROM story_questions q WHERE q.story_id = s.id) AS question_count
+     FROM stories s WHERE s.is_published = 1 ORDER BY s.position ASC, s.title ASC`,
+  );
   return rows.map(toStory);
 }
 
-export function getStoryBySlug(slug: string): Story | null {
-  const row = getDb().prepare('SELECT * FROM stories WHERE slug = ?').get(slug) as
-    | StoryRow
-    | undefined;
+export async function getStoryBySlug(slug: string): Promise<Story | null> {
+  const row = await one<StoryRow>('SELECT * FROM stories WHERE slug = ?', slug);
   return row ? toStory(row) : null;
 }
 
-export function listStoryQuestions(storyId: string): StoryQuestion[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM story_questions WHERE story_id = ? ORDER BY position ASC')
-    .all(storyId) as unknown as StoryQuestionRow[];
+export async function listStoryQuestions(storyId: string): Promise<StoryQuestion[]> {
+  const rows = await all<StoryQuestionRow>(
+    'SELECT * FROM story_questions WHERE story_id = ? ORDER BY position ASC',
+    storyId,
+  );
   return rows.map((row) => ({
     id: row.id,
     storyId: row.story_id,
@@ -1015,88 +1039,90 @@ export function listStoryQuestions(storyId: string): StoryQuestion[] {
   }));
 }
 
-export function saveStoryAttempt(input: {
+export async function saveStoryAttempt(input: {
   userId: string;
   storyId: string;
   score: number;
   total: number;
   answers: number[];
-}): void {
-  getDb()
-    .prepare(
-      `INSERT INTO story_attempts (id, user_id, story_id, score, total, answers, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      newId('att'),
-      input.userId,
-      input.storyId,
-      input.score,
-      input.total,
-      JSON.stringify(input.answers),
-      nowIso(),
-    );
+}): Promise<void> {
+  await run(
+    `INSERT INTO story_attempts (id, user_id, story_id, score, total, answers, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    newId('att'),
+    input.userId,
+    input.storyId,
+    input.score,
+    input.total,
+    JSON.stringify(input.answers),
+    nowIso(),
+  );
 }
 
-export function getBestStoryScore(userId: string, storyId: string): number | null {
-  const row = getDb()
-    .prepare('SELECT MAX(score) AS best FROM story_attempts WHERE user_id = ? AND story_id = ?')
-    .get(userId, storyId) as { best: number | null };
-  return row.best;
+export async function getBestStoryScore(
+  userId: string,
+  storyId: string,
+): Promise<number | null> {
+  const row = await one<{ best: number | null }>(
+    'SELECT MAX(score) AS best FROM story_attempts WHERE user_id = ? AND story_id = ?',
+    userId,
+    storyId,
+  );
+  return row?.best ?? null;
 }
 
 /* ------------------------------------------------------------------ */
 /* Quizzes & exercises                                                 */
 /* ------------------------------------------------------------------ */
 
-const QUIZ_COUNT_COLUMNS = `(SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
-       (SELECT COALESCE(SUM(qq.points), 0) FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS total_points`;
+const QUIZ_COUNT_COLUMNS = `(SELECT COUNT(*)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS question_count,
+       (SELECT COALESCE(SUM(qq.points), 0)::int FROM quiz_questions qq WHERE qq.quiz_id = q.id) AS total_points`;
 
-export function listQuizzes(): Quiz[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT q.*, ${QUIZ_COUNT_COLUMNS}
-       FROM quizzes q
-       WHERE q.is_published = 1
-       ORDER BY q.position ASC, q.title ASC`,
-    )
-    .all() as unknown as QuizRow[];
+export async function listQuizzes(): Promise<Quiz[]> {
+  const rows = await all<QuizRow>(
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS}
+     FROM quizzes q
+     WHERE q.is_published = 1
+     ORDER BY q.position ASC, q.title ASC`,
+  );
   return rows.map(toQuiz);
 }
 
-export function getQuizBySlug(slug: string): Quiz | null {
-  const row = getDb()
-    .prepare(`SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.slug = ?`)
-    .get(slug) as QuizRow | undefined;
+export async function getQuizBySlug(slug: string): Promise<Quiz | null> {
+  const row = await one<QuizRow>(
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.slug = ?`,
+    slug,
+  );
   return row ? toQuiz(row) : null;
 }
 
-export function getQuizById(id: string): Quiz | null {
-  const row = getDb()
-    .prepare(`SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.id = ?`)
-    .get(id) as QuizRow | undefined;
+export async function getQuizById(id: string): Promise<Quiz | null> {
+  const row = await one<QuizRow>(
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.id = ?`,
+    id,
+  );
   return row ? toQuiz(row) : null;
 }
 
-export function getQuizByLessonId(lessonId: string): Quiz | null {
-  const row = getDb()
-    .prepare(
-      `SELECT q.*, ${QUIZ_COUNT_COLUMNS}
-       FROM quizzes q WHERE q.lesson_id = ? AND q.is_published = 1
-       ORDER BY q.position ASC LIMIT 1`,
-    )
-    .get(lessonId) as QuizRow | undefined;
+export async function getQuizByLessonId(lessonId: string): Promise<Quiz | null> {
+  const row = await one<QuizRow>(
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS}
+     FROM quizzes q WHERE q.lesson_id = ? AND q.is_published = 1
+     ORDER BY q.position ASC LIMIT 1`,
+    lessonId,
+  );
   return row ? toQuiz(row) : null;
 }
 
-export function listQuizQuestions(quizId: string): QuizQuestion[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM quiz_questions WHERE quiz_id = ? ORDER BY position ASC')
-    .all(quizId) as unknown as QuizQuestionRow[];
+export async function listQuizQuestions(quizId: string): Promise<QuizQuestion[]> {
+  const rows = await all<QuizQuestionRow>(
+    'SELECT * FROM quiz_questions WHERE quiz_id = ? ORDER BY position ASC',
+    quizId,
+  );
   return rows.map(toQuizQuestion);
 }
 
-export function saveQuizAttempt(input: {
+export async function saveQuizAttempt(input: {
   userId: string;
   quizId: string;
   scorePoints: number;
@@ -1104,26 +1130,23 @@ export function saveQuizAttempt(input: {
   correctCount: number;
   totalQuestions: number;
   answers: unknown;
-}): QuizAttempt {
+}): Promise<QuizAttempt> {
   const id = newId('qat');
   const ts = nowIso();
-  getDb()
-    .prepare(
-      `INSERT INTO quiz_attempts
-         (id, user_id, quiz_id, score_points, max_points, correct_count, total_questions, answers, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      input.userId,
-      input.quizId,
-      input.scorePoints,
-      input.maxPoints,
-      input.correctCount,
-      input.totalQuestions,
-      JSON.stringify(input.answers),
-      ts,
-    );
+  await run(
+    `INSERT INTO quiz_attempts
+       (id, user_id, quiz_id, score_points, max_points, correct_count, total_questions, answers, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    id,
+    input.userId,
+    input.quizId,
+    input.scorePoints,
+    input.maxPoints,
+    input.correctCount,
+    input.totalQuestions,
+    JSON.stringify(input.answers),
+    ts,
+  );
   return {
     id,
     quizId: input.quizId,
@@ -1135,23 +1158,27 @@ export function saveQuizAttempt(input: {
   };
 }
 
-export function getBestQuizAttempt(userId: string, quizId: string): QuizAttempt | null {
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM quiz_attempts WHERE user_id = ? AND quiz_id = ?
-       ORDER BY score_points DESC, created_at ASC LIMIT 1`,
-    )
-    .get(userId, quizId) as QuizAttemptRow | undefined;
+export async function getBestQuizAttempt(
+  userId: string,
+  quizId: string,
+): Promise<QuizAttempt | null> {
+  const row = await one<QuizAttemptRow>(
+    `SELECT * FROM quiz_attempts WHERE user_id = ? AND quiz_id = ?
+     ORDER BY score_points DESC, created_at ASC LIMIT 1`,
+    userId,
+    quizId,
+  );
   return row ? toQuizAttempt(row) : null;
 }
 
-export function listQuizBestScores(userId: string): Record<string, QuizBestScore> {
-  const rows = getDb()
-    .prepare(
-      `SELECT quiz_id, MAX(score_points) AS best, MAX(max_points) AS maxp
-       FROM quiz_attempts WHERE user_id = ? GROUP BY quiz_id`,
-    )
-    .all(userId) as unknown as { quiz_id: string; best: number; maxp: number }[];
+export async function listQuizBestScores(
+  userId: string,
+): Promise<Record<string, QuizBestScore>> {
+  const rows = await all<{ quiz_id: string; best: number; maxp: number }>(
+    `SELECT quiz_id, MAX(score_points)::int AS best, MAX(max_points)::int AS maxp
+     FROM quiz_attempts WHERE user_id = ? GROUP BY quiz_id`,
+    userId,
+  );
   const map: Record<string, QuizBestScore> = {};
   for (const row of rows) {
     map[row.quiz_id] = { scorePoints: row.best, maxPoints: row.maxp };
@@ -1159,55 +1186,62 @@ export function listQuizBestScores(userId: string): Record<string, QuizBestScore
   return map;
 }
 
-export function countQuizAttempts(userId: string): number {
-  const row = getDb()
-    .prepare('SELECT COUNT(*) AS c FROM quiz_attempts WHERE user_id = ?')
-    .get(userId) as { c: number };
-  return row.c;
+export async function countQuizAttempts(userId: string): Promise<number> {
+  const row = await one<{ c: number }>(
+    'SELECT COUNT(*)::int AS c FROM quiz_attempts WHERE user_id = ?',
+    userId,
+  );
+  return row?.c ?? 0;
 }
 
 /* ------------------------------------------------------------------ */
 /* Points ledger                                                       */
 /* ------------------------------------------------------------------ */
 
-export function awardPoints(input: {
+export async function awardPoints(input: {
   userId: string;
   source: PointsSource;
   sourceId?: string | null;
   points: number;
-}): void {
+}): Promise<void> {
   const points = Math.round(input.points);
   if (points <= 0) return;
-  getDb()
-    .prepare(
-      `INSERT INTO points_ledger (id, user_id, source, source_id, points, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    .run(newId('pts'), input.userId, input.source, input.sourceId ?? null, points, nowIso());
+  await run(
+    `INSERT INTO points_ledger (id, user_id, source, source_id, points, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    newId('pts'),
+    input.userId,
+    input.source,
+    input.sourceId ?? null,
+    points,
+    nowIso(),
+  );
 }
 
-export function getPointsTotal(userId: string): number {
-  const row = getDb()
-    .prepare('SELECT COALESCE(SUM(points), 0) AS total FROM points_ledger WHERE user_id = ?')
-    .get(userId) as { total: number };
-  return row.total ?? 0;
+export async function getPointsTotal(userId: string): Promise<number> {
+  const row = await one<{ total: number }>(
+    'SELECT COALESCE(SUM(points), 0)::int AS total FROM points_ledger WHERE user_id = ?',
+    userId,
+  );
+  return row?.total ?? 0;
 }
 
-export function getPointsBySource(userId: string): Record<PointsSource, number> {
-  const rows = getDb()
-    .prepare('SELECT source, COALESCE(SUM(points), 0) AS total FROM points_ledger WHERE user_id = ? GROUP BY source')
-    .all(userId) as unknown as { source: PointsSource; total: number }[];
+export async function getPointsBySource(userId: string): Promise<Record<PointsSource, number>> {
+  const rows = await all<{ source: PointsSource; total: number }>(
+    'SELECT source, COALESCE(SUM(points), 0)::int AS total FROM points_ledger WHERE user_id = ? GROUP BY source',
+    userId,
+  );
   const map: Record<PointsSource, number> = { LESSON: 0, QUIZ: 0, STORY: 0, REVIEW: 0 };
   for (const row of rows) map[row.source] = row.total;
   return map;
 }
 
-export function getPointsHistory(userId: string, limit = 10): PointsEvent[] {
-  const rows = getDb()
-    .prepare(
-      'SELECT id, source, source_id, points, created_at FROM points_ledger WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
-    )
-    .all(userId, limit) as unknown as PointsRow[];
+export async function getPointsHistory(userId: string, limit = 10): Promise<PointsEvent[]> {
+  const rows = await all<PointsRow>(
+    'SELECT id, source, source_id, points, created_at FROM points_ledger WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+    userId,
+    limit,
+  );
   return rows.map((row) => ({
     id: row.id,
     source: row.source,
@@ -1217,22 +1251,26 @@ export function getPointsHistory(userId: string, limit = 10): PointsEvent[] {
   }));
 }
 
-export function getActivityDates(userId: string, limit = 120): string[] {
-  const rows = getDb()
-    .prepare(
-      'SELECT created_at FROM points_ledger WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
-    )
-    .all(userId, limit) as unknown as { created_at: string }[];
+export async function getActivityDates(userId: string, limit = 120): Promise<string[]> {
+  const rows = await all<{ created_at: string }>(
+    'SELECT created_at FROM points_ledger WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+    userId,
+    limit,
+  );
   return rows.map((row) => row.created_at);
 }
 
-export function getPointsSummary(userId: string): PointsSummary {
-  const total = getPointsTotal(userId);
+export async function getPointsSummary(userId: string): Promise<PointsSummary> {
+  const [total, bySource, activityDates] = await Promise.all([
+    getPointsTotal(userId),
+    getPointsBySource(userId),
+    getActivityDates(userId),
+  ]);
   const level = levelForPoints(total);
-  const streak = computeStreak(getActivityDates(userId));
+  const streak = computeStreak(activityDates);
   return {
     total,
-    bySource: getPointsBySource(userId),
+    bySource,
     streak,
     levelKey: level.key,
     levelIndex: level.index,
@@ -1245,25 +1283,22 @@ export function getPointsSummary(userId: string): PointsSummary {
 /* Audit                                                               */
 /* ------------------------------------------------------------------ */
 
-export function logAudit(input: {
+export async function logAudit(input: {
   actorId: string | null;
   action: string;
   entity: string;
   entityId?: string | null;
   detail?: string | null;
-}): void {
-  getDb()
-    .prepare(
-      `INSERT INTO audit_log (id, actor_id, action, entity, entity_id, detail, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      newId('aud'),
-      input.actorId,
-      input.action,
-      input.entity,
-      input.entityId ?? null,
-      input.detail ?? null,
-      nowIso(),
-    );
+}): Promise<void> {
+  await run(
+    `INSERT INTO audit_log (id, actor_id, action, entity, entity_id, detail, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    newId('aud'),
+    input.actorId,
+    input.action,
+    input.entity,
+    input.entityId ?? null,
+    input.detail ?? null,
+    nowIso(),
+  );
 }

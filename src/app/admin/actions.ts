@@ -28,15 +28,16 @@ export async function setUserRoleAction(formData: FormData): Promise<void> {
   }
 
   if (parsed.data.role === 'STUDENT') {
-    const admins = listUsers().filter((user) => user.role === 'ADMIN');
-    const target = listUsers().find((user) => user.id === parsed.data.userId);
+    const users = await listUsers();
+    const admins = users.filter((user) => user.role === 'ADMIN');
+    const target = users.find((user) => user.id === parsed.data.userId);
     if (target?.role === 'ADMIN' && admins.length <= 1) {
       return; // never remove the last administrator
     }
   }
 
-  updateUserRole(parsed.data.userId, parsed.data.role);
-  logAudit({
+  await updateUserRole(parsed.data.userId, parsed.data.role);
+  await logAudit({
     actorId: admin.id,
     action: 'set-role',
     entity: 'user',
@@ -51,13 +52,14 @@ export async function deleteUserAction(formData: FormData): Promise<void> {
   const userId = String(formData.get('userId') ?? '');
   if (!userId || userId === admin.id) return;
 
-  const target = listUsers().find((user) => user.id === userId);
-  if (target?.role === 'ADMIN' && listUsers().filter((u) => u.role === 'ADMIN').length <= 1) {
+  const users = await listUsers();
+  const target = users.find((user) => user.id === userId);
+  if (target?.role === 'ADMIN' && users.filter((u) => u.role === 'ADMIN').length <= 1) {
     return;
   }
 
-  deleteUser(userId);
-  logAudit({ actorId: admin.id, action: 'delete-user', entity: 'user', entityId: userId });
+  await deleteUser(userId);
+  await logAudit({ actorId: admin.id, action: 'delete-user', entity: 'user', entityId: userId });
   revalidatePath('/admin/users');
 }
 
@@ -66,12 +68,12 @@ export async function verifyMediaAction(formData: FormData): Promise<void> {
   const parsed = mediaVerifySchema.safeParse({ mediaId: formData.get('mediaId') });
   if (!parsed.success) return;
 
-  const media = getMediaById(parsed.data.mediaId);
+  const media = await getMediaById(parsed.data.mediaId);
   if (!media) return;
 
   const result = await verifyMediaUrl(media.provider, media.externalId, media.url);
-  updateMediaVerification(media.id, result.status, result.note);
-  logAudit({
+  await updateMediaVerification(media.id, result.status, result.note);
+  await logAudit({
     actorId: admin.id,
     action: 'verify-media',
     entity: 'media',
@@ -83,10 +85,11 @@ export async function verifyMediaAction(formData: FormData): Promise<void> {
 
 export async function verifyAllMediaAction(): Promise<void> {
   const admin = await requireAdmin();
-  for (const media of listMedia()) {
+  const mediaList = await listMedia();
+  for (const media of mediaList) {
     const result = await verifyMediaUrl(media.provider, media.externalId, media.url);
-    updateMediaVerification(media.id, result.status, result.note);
+    await updateMediaVerification(media.id, result.status, result.note);
   }
-  logAudit({ actorId: admin.id, action: 'verify-all-media', entity: 'media' });
+  await logAudit({ actorId: admin.id, action: 'verify-all-media', entity: 'media' });
   revalidatePath('/admin/media');
 }

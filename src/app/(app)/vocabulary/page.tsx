@@ -17,10 +17,13 @@ const SAMPLE_SIZE = 30;
 export default async function VocabularyPage() {
   const user = await requireUser();
   const { dict } = await getLocaleAndDictionary();
-  const words = listVocabulary({ limit: SAMPLE_SIZE });
-  const total = countVocabulary();
-  const due = countDueReviews(user.id);
-  const favoriteIds = new Set(listFavoriteIds(user.id));
+  const [words, total, due, favoriteIdList] = await Promise.all([
+    listVocabulary({ limit: SAMPLE_SIZE }),
+    countVocabulary(),
+    countDueReviews(user.id),
+    listFavoriteIds(user.id),
+  ]);
+  const favoriteIds = new Set(favoriteIdList);
 
   return (
     <div className="flex flex-col gap-6">

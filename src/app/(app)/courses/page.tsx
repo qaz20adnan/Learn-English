@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function CoursesPage() {
   const user = await requireUser();
   const { locale, dict } = await getLocaleAndDictionary();
-  const summaries = getCourseProgressSummaries(user.id);
+  const summaries = await getCourseProgressSummaries(user.id);
 
   const groupBySlug = new Map(CATALOG_COURSES.map((course) => [course.slug, course.levelGroup]));
 
@@ -56,7 +56,7 @@ export default async function CoursesPage() {
   );
 }
 
-type CourseSummary = ReturnType<typeof getCourseProgressSummaries>[number];
+type CourseSummary = Awaited<ReturnType<typeof getCourseProgressSummaries>>[number];
 
 function CourseGrid({ items, dict }: { items: CourseSummary[]; dict: Awaited<ReturnType<typeof getLocaleAndDictionary>>['dict'] }) {
   return (

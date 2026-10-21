@@ -26,8 +26,8 @@ export async function createWordAction(
     return { errorKey: 'invalidValues' };
   }
 
-  createVocabulary({ ...parsed.data, createdBy: user.id });
-  ensureReviewEntries(user.id);
+  await createVocabulary({ ...parsed.data, createdBy: user.id });
+  await ensureReviewEntries(user.id);
 
   revalidatePath('/favorites');
   revalidatePath('/vocabulary');

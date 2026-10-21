@@ -13,7 +13,7 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const quiz = getQuizBySlug(slug);
+  const quiz = await getQuizBySlug(slug);
   const { dict } = await getLocaleAndDictionary();
   return { title: quiz ? (quiz.titleAr ?? quiz.title) : dict.quizzes.metaTitle };
 }
@@ -24,13 +24,15 @@ export default async function QuizPage({ params }: { params: Promise<{ slug: str
   const { dict } = await getLocaleAndDictionary();
   const t = dict.quizzes;
 
-  const quiz = getQuizBySlug(slug);
+  const quiz = await getQuizBySlug(slug);
   if (!quiz || !quiz.isPublished) notFound();
 
-  const questions = listQuizQuestions(quiz.id);
+  const [questions, best] = await Promise.all([
+    listQuizQuestions(quiz.id),
+    getBestQuizAttempt(user.id, quiz.id),
+  ]);
   if (questions.length === 0) notFound();
 
-  const best = getBestQuizAttempt(user.id, quiz.id);
   const runnerQuestions = questions.map((question) => ({
     id: question.id,
     type: question.type,

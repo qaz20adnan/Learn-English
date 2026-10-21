@@ -24,14 +24,14 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!getVocabularyById(parsed.data.vocabId)) {
+  if (!(await getVocabularyById(parsed.data.vocabId))) {
     return NextResponse.json({ error: 'الكلمة غير موجودة' }, { status: 404 });
   }
 
   if (parsed.data.favorite) {
-    addFavorite(user.id, parsed.data.vocabId);
+    await addFavorite(user.id, parsed.data.vocabId);
   } else {
-    removeFavorite(user.id, parsed.data.vocabId);
+    await removeFavorite(user.id, parsed.data.vocabId);
   }
 
   return NextResponse.json({ ok: true, favorite: parsed.data.favorite });

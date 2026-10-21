@@ -25,7 +25,7 @@ export async function updateSettingsAction(
     return { errorKey: 'invalidValues' };
   }
 
-  updateSettings(user.id, parsed.data);
+  await updateSettings(user.id, parsed.data);
 
   // Keep the interface-language cookie in sync so the whole shell updates.
   if (parsed.data.uiLanguage) {

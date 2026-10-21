@@ -7,16 +7,15 @@
  *
  * Usage: npm run db:seed
  */
-import { getDb, newId, nowIso } from '../src/lib/db/client';
+import { exec, newId, nowIso, one, run } from '../src/lib/db/client';
 import { hashPassword } from '../src/lib/auth/password';
 import { parseMediaUrl } from '../src/lib/media';
 import { SEED_COURSES, SEED_MEDIA, SEED_QUIZZES, SEED_STORIES } from '../src/lib/content/seed-data';
 
-const db = getDb();
 const ts = nowIso();
 
-function resetContent(): void {
-  db.exec(`
+async function resetContent(): Promise<void> {
+  await exec(`
     DELETE FROM quiz_attempts;
     DELETE FROM quiz_questions;
     DELETE FROM quizzes;
@@ -33,16 +32,14 @@ function resetContent(): void {
   `);
 }
 
-function seedMedia(): Map<string, string> {
-  const insert = db.prepare(
-    `INSERT INTO media (id, provider, external_id, url, title, verification_status, verification_note, source_url, last_checked_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'UNVERIFIED', NULL, ?, NULL, ?, ?)`,
-  );
+async function seedMedia(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   for (const item of SEED_MEDIA) {
     const parsed = parseMediaUrl(item.url);
     const id = newId('med');
-    insert.run(
+    await run(
+      `INSERT INTO media (id, provider, external_id, url, title, verification_status, verification_note, source_url, last_checked_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'UNVERIFIED', NULL, ?, NULL, ?, ?)`,
       id,
       parsed.provider,
       parsed.externalId,
@@ -62,30 +59,16 @@ interface SeededIds {
   lessonIds: Map<string, string>;
 }
 
-function seedCourses(mediaIds: Map<string, string>): SeededIds {
-  const insertCourse = db.prepare(
-    `INSERT INTO courses (id, slug, title, title_ar, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-  );
-  const insertLesson = db.prepare(
-    `INSERT INTO lessons (id, course_id, slug, title, title_ar, summary, content, transcript, duration_minutes, position, media_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const insertVocab = db.prepare(
-    `INSERT INTO vocabulary (id, course_id, term, translation, part_of_speech, phonetic, example, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  const linkVocab = db.prepare(
-    'INSERT OR IGNORE INTO lesson_vocabulary (lesson_id, vocab_id, position) VALUES (?, ?, ?)',
-  );
-
+async function seedCourses(mediaIds: Map<string, string>): Promise<SeededIds> {
   const courseIds = new Map<string, string>();
   const lessonIds = new Map<string, string>();
 
-  SEED_COURSES.forEach((course, courseIndex) => {
+  for (const [courseIndex, course] of SEED_COURSES.entries()) {
     const courseId = newId('crs');
     courseIds.set(course.slug, courseId);
-    insertCourse.run(
+    await run(
+      `INSERT INTO courses (id, slug, title, title_ar, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       courseId,
       course.slug,
       course.title,
@@ -101,11 +84,13 @@ function seedCourses(mediaIds: Map<string, string>): SeededIds {
     );
 
     const courseLessonIds: string[] = [];
-    course.lessons.forEach((lesson, lessonIndex) => {
+    for (const [lessonIndex, lesson] of course.lessons.entries()) {
       const lessonId = newId('les');
       lessonIds.set(`${course.slug}/${lesson.slug}`, lessonId);
       courseLessonIds.push(lessonId);
-      insertLesson.run(
+      await run(
+        `INSERT INTO lessons (id, course_id, slug, title, title_ar, summary, content, transcript, duration_minutes, position, media_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         lessonId,
         courseId,
         lesson.slug,
@@ -120,13 +105,15 @@ function seedCourses(mediaIds: Map<string, string>): SeededIds {
         ts,
         ts,
       );
-    });
+    }
 
     const courseVocabIds: string[] = [];
     for (const vocab of course.vocabulary) {
       const vocabId = newId('voc');
       courseVocabIds.push(vocabId);
-      insertVocab.run(
+      await run(
+        `INSERT INTO vocabulary (id, course_id, term, translation, part_of_speech, phonetic, example, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         vocabId,
         courseId,
         vocab.term,
@@ -140,29 +127,29 @@ function seedCourses(mediaIds: Map<string, string>): SeededIds {
 
     // Attach every course word to each of the course lessons so the lesson page
     // always has vocabulary to show.
-    courseLessonIds.forEach((lessonId) => {
-      courseVocabIds.forEach((vocabId, position) => {
-        linkVocab.run(lessonId, vocabId, position);
-      });
-    });
-  });
+    for (const lessonId of courseLessonIds) {
+      for (const [position, vocabId] of courseVocabIds.entries()) {
+        await run(
+          `INSERT INTO lesson_vocabulary (lesson_id, vocab_id, position)
+           VALUES (?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+          lessonId,
+          vocabId,
+          position,
+        );
+      }
+    }
+  }
 
   return { courseIds, lessonIds };
 }
 
-function seedStories(): void {
-  const insertStory = db.prepare(
-    `INSERT INTO stories (id, slug, title, title_ar, level, cover_emoji, summary, body, is_published, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-  );
-  const insertQuestion = db.prepare(
-    `INSERT INTO story_questions (id, story_id, prompt, options, answer_index, explanation, position)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  SEED_STORIES.forEach((story, index) => {
+async function seedStories(): Promise<void> {
+  for (const [index, story] of SEED_STORIES.entries()) {
     const storyId = newId('sty');
-    insertStory.run(
+    await run(
+      `INSERT INTO stories (id, slug, title, title_ar, level, cover_emoji, summary, body, is_published, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       storyId,
       story.slug,
       story.title,
@@ -175,8 +162,10 @@ function seedStories(): void {
       ts,
       ts,
     );
-    story.questions.forEach((question, qIndex) => {
-      insertQuestion.run(
+    for (const [qIndex, question] of story.questions.entries()) {
+      await run(
+        `INSERT INTO story_questions (id, story_id, prompt, options, answer_index, explanation, position)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         newId('qst'),
         storyId,
         question.prompt,
@@ -185,28 +174,21 @@ function seedStories(): void {
         question.explanation,
         qIndex,
       );
-    });
-  });
+    }
+  }
 }
 
-function seedQuizzes(ids: SeededIds): void {
-  const insertQuiz = db.prepare(
-    `INSERT INTO quizzes (id, slug, title, title_ar, description, level, course_id, lesson_id, is_published, position, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-  );
-  const insertQuestion = db.prepare(
-    `INSERT INTO quiz_questions (id, quiz_id, type, prompt, options, answer_index, accepted_answers, correct_boolean, points, explanation, position)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-
-  SEED_QUIZZES.forEach((quiz, index) => {
+async function seedQuizzes(ids: SeededIds): Promise<void> {
+  for (const [index, quiz] of SEED_QUIZZES.entries()) {
     const quizId = newId('qiz');
     const courseId = quiz.courseSlug ? (ids.courseIds.get(quiz.courseSlug) ?? null) : null;
     const lessonId =
       quiz.courseSlug && quiz.lessonSlug
         ? (ids.lessonIds.get(`${quiz.courseSlug}/${quiz.lessonSlug}`) ?? null)
         : null;
-    insertQuiz.run(
+    await run(
+      `INSERT INTO quizzes (id, slug, title, title_ar, description, level, course_id, lesson_id, is_published, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       quizId,
       quiz.slug,
       quiz.title,
@@ -219,8 +201,10 @@ function seedQuizzes(ids: SeededIds): void {
       ts,
       ts,
     );
-    quiz.questions.forEach((question, qIndex) => {
-      insertQuestion.run(
+    for (const [qIndex, question] of quiz.questions.entries()) {
+      await run(
+        `INSERT INTO quiz_questions (id, quiz_id, type, prompt, options, answer_index, accepted_answers, correct_boolean, points, explanation, position)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         newId('qq'),
         quizId,
         question.type,
@@ -233,8 +217,8 @@ function seedQuizzes(ids: SeededIds): void {
         question.explanation ?? '',
         qIndex,
       );
-    });
-  });
+    }
+  }
 }
 
 async function seedAdmin(): Promise<void> {
@@ -250,49 +234,55 @@ async function seedAdmin(): Promise<void> {
     throw new Error('ADMIN_PASSWORD must be at least 8 characters long.');
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as
-    | { id: string }
-    | undefined;
+  const existing = await one<{ id: string }>('SELECT id FROM users WHERE email = ?', email);
   if (existing) {
-    db.prepare("UPDATE users SET role = 'ADMIN', updated_at = ? WHERE id = ?").run(ts, existing.id);
+    await run("UPDATE users SET role = 'ADMIN', updated_at = ? WHERE id = ?", ts, existing.id);
     console.log(`ℹ️  Existing user ${email} promoted to ADMIN.`);
     return;
   }
 
   const passwordHash = await hashPassword(password);
-  db.prepare(
+  const userId = newId('usr');
+  await run(
     `INSERT INTO users (id, email, name, password_hash, role, created_at, updated_at)
      VALUES (?, ?, ?, ?, 'ADMIN', ?, ?)`,
-  ).run(newId('usr'), email, name, passwordHash, ts, ts);
-  db.prepare(
+    userId,
+    email,
+    name,
+    passwordHash,
+    ts,
+    ts,
+  );
+  await run(
     `INSERT INTO user_settings (user_id, daily_goal_minutes, theme, ui_language, updated_at)
-     VALUES ((SELECT id FROM users WHERE email = ?), 15, 'system', 'ar', ?)`,
-  ).run(email, ts);
+     VALUES (?, 15, 'system', 'ar', ?)
+     ON CONFLICT (user_id) DO NOTHING`,
+    userId,
+    ts,
+  );
   console.log(`✅ Admin user ${email} created.`);
 }
 
 async function main(): Promise<void> {
   console.log('Seeding content...');
-  resetContent();
-  const mediaIds = seedMedia();
-  const ids = seedCourses(mediaIds);
-  seedStories();
-  seedQuizzes(ids);
+  await resetContent();
+  const mediaIds = await seedMedia();
+  const ids = await seedCourses(mediaIds);
+  await seedStories();
+  await seedQuizzes(ids);
   await seedAdmin();
 
-  const counts = db
-    .prepare(
-      `SELECT
-        (SELECT COUNT(*) FROM courses) AS courses,
-        (SELECT COUNT(*) FROM lessons) AS lessons,
-        (SELECT COUNT(*) FROM media) AS media,
-        (SELECT COUNT(*) FROM vocabulary) AS vocabulary,
-        (SELECT COUNT(*) FROM stories) AS stories,
-        (SELECT COUNT(*) FROM story_questions) AS questions,
-        (SELECT COUNT(*) FROM quizzes) AS quizzes,
-        (SELECT COUNT(*) FROM quiz_questions) AS quiz_questions`,
-    )
-    .get() as Record<string, number>;
+  const counts = await one<Record<string, number>>(
+    `SELECT
+      (SELECT COUNT(*)::int FROM courses) AS courses,
+      (SELECT COUNT(*)::int FROM lessons) AS lessons,
+      (SELECT COUNT(*)::int FROM media) AS media,
+      (SELECT COUNT(*)::int FROM vocabulary) AS vocabulary,
+      (SELECT COUNT(*)::int FROM stories) AS stories,
+      (SELECT COUNT(*)::int FROM story_questions) AS questions,
+      (SELECT COUNT(*)::int FROM quizzes) AS quizzes,
+      (SELECT COUNT(*)::int FROM quiz_questions) AS quiz_questions`,
+  );
 
   console.log('Seed complete:', counts);
 }

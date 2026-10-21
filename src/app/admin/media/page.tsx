@@ -9,7 +9,7 @@ import { verifyAllMediaAction, verifyMediaAction } from '../actions';
 export default async function AdminMediaPage() {
   await requireAdmin();
   const { locale, dict } = await getLocaleAndDictionary();
-  const media = listMedia();
+  const media = await listMedia();
   const t = dict.admin.mediaPage;
 
   return (

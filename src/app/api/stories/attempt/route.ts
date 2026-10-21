@@ -31,12 +31,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const story = getStoryBySlug(parsed.data.storyId);
+  const story = await getStoryBySlug(parsed.data.storyId);
   if (!story) {
     return NextResponse.json({ error: 'القصة غير موجودة' }, { status: 404 });
   }
 
-  const questions = listStoryQuestions(story.id);
+  const questions = await listStoryQuestions(story.id);
   const results = questions.map((question, index) => ({
     questionId: question.id,
     correct: parsed.data.answers[index] === question.answerIndex,
@@ -45,8 +45,8 @@ export async function POST(request: Request) {
   }));
   const score = results.filter((result) => result.correct).length;
 
-  const previousBest = getBestStoryScore(user.id, story.id) ?? 0;
-  saveStoryAttempt({
+  const previousBest = (await getBestStoryScore(user.id, story.id)) ?? 0;
+  await saveStoryAttempt({
     userId: user.id,
     storyId: story.id,
     score,
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
   const awarded = pointsForImprovement(score, previousBest) * POINTS.storyCorrect;
   if (awarded > 0) {
-    awardPoints({ userId: user.id, source: 'STORY', sourceId: story.id, points: awarded });
+    await awardPoints({ userId: user.id, source: 'STORY', sourceId: story.id, points: awarded });
   }
 
   return NextResponse.json({ score, total: questions.length, results, awardedPoints: awarded });

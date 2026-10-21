@@ -7,10 +7,12 @@ import { SectionTitle, StatCard } from '@/components/ui';
 export default async function AdminOverviewPage() {
   await requireAdmin();
   const { dict } = await getLocaleAndDictionary();
-  const users = countUsers();
-  const courses = listCourses(true);
-  const media = listMedia();
-  const stories = listStories();
+  const [users, courses, media, stories] = await Promise.all([
+    countUsers(),
+    listCourses(true),
+    listMedia(),
+    listStories(),
+  ]);
 
   const mediaByStatus = media.reduce<Record<string, number>>((acc, item) => {
     acc[item.verificationStatus] = (acc[item.verificationStatus] ?? 0) + 1;
