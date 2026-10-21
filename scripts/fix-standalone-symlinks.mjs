@@ -1,4 +1,4 @@
-import { cpSync, existsSync, lstatSync, readdirSync, readlinkSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readlinkSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 /**
