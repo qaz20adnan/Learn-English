@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth/session';
 import { favoriteSchema } from '@/lib/validation';
-import { addFavorite, getVocabularyById, removeFavorite } from '@/lib/db/queries';
+import { addFavorite, getVocabularyForUser, removeFavorite } from '@/lib/db/queries';
 
 export async function POST(request: Request) {
   const user = await getSessionUser();
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!(await getVocabularyById(parsed.data.vocabId))) {
+  if (!(await getVocabularyForUser(user.id, parsed.data.vocabId))) {
     return NextResponse.json({ error: 'الكلمة غير موجودة' }, { status: 404 });
   }
 

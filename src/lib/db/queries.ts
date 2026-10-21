@@ -793,6 +793,24 @@ export async function getVocabularyById(id: string): Promise<Vocabulary | null> 
   return row ? toVocabulary(row) : null;
 }
 
+/**
+ * Look up a word only if the learner is allowed to see it: either a word from
+ * the shared bank or one they created themselves. Used by endpoints that accept
+ * a vocabulary id from the client so one account cannot reference another
+ * account's private words.
+ */
+export async function getVocabularyForUser(
+  userId: string,
+  vocabId: string,
+): Promise<Vocabulary | null> {
+  const row = await one<VocabularyRow>(
+    'SELECT * FROM vocabulary WHERE id = ? AND (created_by IS NULL OR created_by = ?)',
+    vocabId,
+    userId,
+  );
+  return row ? toVocabulary(row) : null;
+}
+
 export async function createVocabulary(input: {
   courseId?: string | null;
   lessonId?: string | null;
@@ -872,8 +890,10 @@ export async function listFavoriteVocabulary(userId: string): Promise<Vocabulary
   const rows = await all<VocabularyRow>(
     `SELECT v.* FROM vocabulary v
      LEFT JOIN vocab_favorites f ON f.vocab_id = v.id AND f.user_id = ?
-     WHERE f.id IS NOT NULL OR v.created_by = ?
+     WHERE (f.id IS NOT NULL AND (v.created_by IS NULL OR v.created_by = ?))
+        OR v.created_by = ?
      ORDER BY v.term`,
+    userId,
     userId,
     userId,
   );
@@ -883,9 +903,12 @@ export async function listFavoriteVocabulary(userId: string): Promise<Vocabulary
 export async function countFavorites(userId: string): Promise<number> {
   const row = await one<{ c: number }>(
     `SELECT (
-       (SELECT COUNT(*) FROM vocab_favorites WHERE user_id = ?) +
+       (SELECT COUNT(*) FROM vocab_favorites f
+        JOIN vocabulary v ON v.id = f.vocab_id
+        WHERE f.user_id = ? AND (v.created_by IS NULL OR v.created_by = ?)) +
        (SELECT COUNT(*) FROM vocabulary WHERE created_by = ?)
      )::int AS c`,
+    userId,
     userId,
     userId,
   );
@@ -894,7 +917,10 @@ export async function countFavorites(userId: string): Promise<number> {
 
 export async function listFavoriteIds(userId: string): Promise<string[]> {
   const rows = await all<{ vocab_id: string }>(
-    'SELECT vocab_id FROM vocab_favorites WHERE user_id = ?',
+    `SELECT f.vocab_id FROM vocab_favorites f
+     JOIN vocabulary v ON v.id = f.vocab_id
+     WHERE f.user_id = ? AND (v.created_by IS NULL OR v.created_by = ?)`,
+    userId,
     userId,
   );
   return rows.map((row) => row.vocab_id);
