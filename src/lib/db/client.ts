@@ -49,7 +49,8 @@ export function getPool(): Pool {
       ssl: sslFor(url),
       max: Number(process.env.DATABASE_POOL_MAX ?? 3),
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
+      // Neon free-tier databases can take a while to resume from suspension.
+      connectionTimeoutMillis: 30_000,
     });
   }
   return globalThis.__academyPool;
