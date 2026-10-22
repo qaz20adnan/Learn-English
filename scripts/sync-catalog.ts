@@ -75,28 +75,42 @@ async function upsertCourse(
   return id;
 }
 
-async function upsertMedia(item: YouTubeItem): Promise<string> {
+async function upsertMedia(item: YouTubeItem, playlistId: string): Promise<string> {
   const url = `https://www.youtube.com/watch?v=${item.videoId}`;
+  const sourceUrl = `https://www.youtube.com/playlist?list=${playlistId}`;
+  const note = 'Imported from the zAmerican English channel playlist.';
   const existing = await one<{ id: string }>(
     "SELECT id FROM media WHERE provider = 'YOUTUBE' AND external_id = ?",
     item.videoId,
   );
 
   if (existing) {
-    await run('UPDATE media SET url = ?, title = ?, updated_at = ? WHERE id = ?', url, item.title, ts, existing.id);
+    await run(
+      `UPDATE media SET url = ?, title = ?, source_url = ?, verification_status = 'AVAILABLE',
+         verification_note = ?, last_checked_at = ?, updated_at = ?
+       WHERE id = ?`,
+      url,
+      item.title,
+      sourceUrl,
+      note,
+      ts,
+      ts,
+      existing.id,
+    );
     return existing.id;
   }
 
   const id = newId('med');
   await run(
     `INSERT INTO media
-       (id, provider, external_id, url, title, verification_status, verification_note, last_checked_at, created_at, updated_at)
-     VALUES (?, 'YOUTUBE', ?, ?, ?, 'AVAILABLE', ?, ?, ?, ?)`,
+       (id, provider, external_id, url, title, verification_status, verification_note, source_url, last_checked_at, created_at, updated_at)
+     VALUES (?, 'YOUTUBE', ?, ?, ?, 'AVAILABLE', ?, ?, ?, ?, ?)`,
     id,
     item.videoId,
     url,
     item.title,
-    'Imported from the zAmerican English channel playlist.',
+    note,
+    sourceUrl,
     ts,
     ts,
     ts,
@@ -106,15 +120,45 @@ async function upsertMedia(item: YouTubeItem): Promise<string> {
 
 async function upsertLesson(
   courseId: string,
+  courseTitle: string,
   item: YouTubeItem,
   position: number,
   mediaId: string,
 ): Promise<string> {
   const slug = `v-${item.videoId}`;
   const youtubeUrl = `https://www.youtube.com/watch?v=${item.videoId}`;
-  const durationMinutes = item.durationSeconds ? Math.max(1, Math.round(item.durationSeconds / 60)) : 5;
+  const durationMinutes = item.durationSeconds
+    ? Math.max(1, Math.round(item.durationSeconds / 60))
+    : 5;
+  const description = item.description?.trim().slice(0, 2_000) ?? '';
+  // The YouTube description is stored in the lesson body. Using it as the card
+  // summary would surface promotional links, so the title is the clean summary.
   const summary = item.title;
-  const content = `## ${item.title}\n\nدرس من قناة zAmerican English.\n\n[شاهد الدرس على يوتيوب](${youtubeUrl})`;
+  const descriptionBlock = description
+    ? `\n\n### وصف الدرس من القناة\n\n${description}\n`
+    : '';
+  const durationLine = item.durationSeconds
+    ? `\n> مدة الفيديو: ${durationMinutes} دقائق تقريبًا.`
+    : '';
+  const content = `## ${item.title}
+
+${descriptionBlock}
+### ماذا ستتعلّم في هذا الدرس؟
+
+- أهم المفردات والعبارات الواردة في فيديو **${courseTitle}**.
+- كيف تستخدم الكلمات الجديدة في جمل يومية.
+- تدريب على الاستماع وفهم الفكرة العامة قبل التفاصيل.
+
+### خطوات الدراسة
+
+1. شاهد الفيديو كاملًا مرة واحدة دون توقف.
+2. أعِد مشاهدة المقاطع الصعبة مع قراءة المفردات أسفل الصفحة.
+3. اكتب جملتين من عندك باستخدام كلمتين جديدتين.
+4. اجتز اختبار الدرس بنسبة **70%** على الأقل لفتح الدرس التالي.
+
+> نصيحة: المراجعة القصيرة المتكررة أفضل من مشاهدة طويلة مرة واحدة.${durationLine}
+
+[شاهد الدرس على يوتيوب](${youtubeUrl})`;
 
   const existing = await one<{ id: string }>(
     'SELECT id FROM lessons WHERE course_id = ? AND slug = ?',
@@ -232,21 +276,32 @@ async function generateLessonQuiz(
   if (existing && !REFRESH_CONTENT) return;
 
   const quizId = existing?.id ?? newId('qiz');
+  const passPercent = 70;
   if (existing) {
     await run('DELETE FROM quiz_questions WHERE quiz_id = ?', quizId);
-    await run('UPDATE quizzes SET title = ?, title_ar = ?, updated_at = ? WHERE id = ?', `${lessonTitle} — Quiz`, `${lessonTitle} — اختبار`, ts, quizId);
+    await run(
+      `UPDATE quizzes SET title = ?, title_ar = ?, description = ?, pass_percent = ?, updated_at = ?
+       WHERE id = ?`,
+      `${lessonTitle} — Quiz`,
+      `${lessonTitle} — اختبار`,
+      'اختبار قصير على أهم قواعد ومفردات الدرس. تُسحب الأسئلة عشوائيًا من بنك يتجدد كل محاولة، والنجاح يتطلب 70%.',
+      passPercent,
+      ts,
+      quizId,
+    );
   } else {
     await run(
-      `INSERT INTO quizzes (id, slug, title, title_ar, description, level, course_id, lesson_id, is_published, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)`,
+      `INSERT INTO quizzes (id, slug, title, title_ar, description, level, course_id, lesson_id, is_published, position, pass_percent, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?)`,
       quizId,
       `${courseSlug}-${lessonSlug}-quiz`,
       `${lessonTitle} — Quiz`,
       `${lessonTitle} — اختبار`,
-      'اختبار قصير على أهم قواعد ومفردات الدرس.',
+      'اختبار قصير على أهم قواعد ومفردات الدرس. تُسحب الأسئلة عشوائيًا من بنك يتجدد كل محاولة، والنجاح يتطلب 70%.',
       level,
       courseId,
       lessonId,
+      passPercent,
       ts,
       ts,
     );
@@ -289,8 +344,8 @@ async function main(): Promise<void> {
 
     const seenLessonIds = new Set<string>();
     for (const [position, item] of items.entries()) {
-      const mediaId = await upsertMedia(item);
-      const lessonId = await upsertLesson(courseId, item, position, mediaId);
+      const mediaId = await upsertMedia(item, course.playlistId);
+      const lessonId = await upsertLesson(courseId, course.title, item, position, mediaId);
       seenLessonIds.add(lessonId);
       await generateLessonVocabulary(lessonId, course.level, `v-${item.videoId}`);
       await generateLessonQuiz(

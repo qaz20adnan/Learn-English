@@ -7,8 +7,10 @@ import {
   awardPoints,
   countFavorites,
   countUsers,
+  createQuizSession,
   createUser,
   createVocabulary,
+  deleteQuizSession,
   deleteUser,
   ensureReviewEntries,
   findUserById,
@@ -16,7 +18,10 @@ import {
   getBestStoryScore,
   getCourseProgressSummaries,
   getLearningStats,
+  getLessonAssessment,
   getLessonProgress,
+  getQuizSessionForUser,
+  listCourseAssessments,
   getPointsTotal,
   getReviewCard,
   getSettings,
@@ -27,6 +32,7 @@ import {
   listFavoriteVocabulary,
   listUsers,
   saveLessonProgress,
+  saveQuizAttempt,
   saveReviewState,
   saveStoryAttempt,
   updateSettings,
@@ -327,5 +333,115 @@ describe('account isolation', () => {
     await awardPoints({ userId: first.id, source: 'REVIEW', points: 20 });
     expect(await getPointsTotal(first.id)).toBe(20);
     expect(await getPointsTotal(second.id)).toBe(0);
+  });
+});
+
+describe('lesson assessments and quiz sessions', () => {
+  async function seedQuiz(lessonId: string, courseId: string, passPercent = 70) {
+    const quizId = newId('qiz');
+    await run(
+      `INSERT INTO quizzes
+         (id, slug, title, description, level, course_id, lesson_id, is_published, position, pass_percent, created_at, updated_at)
+       VALUES (?, ?, 'Quiz', 'desc', 'a1', ?, ?, 1, 1, ?, ?, ?)`,
+      quizId,
+      `q-${quizId}`,
+      courseId,
+      lessonId,
+      passPercent,
+      nowIso(),
+      nowIso(),
+    );
+    for (let index = 0; index < 6; index += 1) {
+      await run(
+        `INSERT INTO quiz_questions
+           (id, quiz_id, type, prompt, options, answer_index, accepted_answers, correct_boolean, points, explanation, position)
+         VALUES (?, ?, 'MULTIPLE_CHOICE', ?, '["a","b","c","d"]', 0, '[]', NULL, 1, 'why', ?)`,
+        newId('qq'),
+        quizId,
+        `Question ${index}`,
+        index,
+      );
+    }
+    return quizId;
+  }
+
+  it('uses the best percentage and pass mark to unlock a lesson', async () => {
+    const user = await createUser({
+      email: 'assessment@example.com',
+      name: 'Assessment',
+      passwordHash: 'x',
+    });
+    const { courseId, lessonId } = await seedCourseWithLesson();
+    const quizId = await seedQuiz(lessonId, courseId, 70);
+
+    let assessment = await getLessonAssessment(user.id, lessonId);
+    expect(assessment).toMatchObject({
+      quizId,
+      required: true,
+      passed: false,
+      bestPercent: null,
+      attempts: 0,
+    });
+
+    await saveQuizAttempt({
+      userId: user.id,
+      quizId,
+      scorePoints: 3,
+      maxPoints: 6,
+      correctCount: 3,
+      totalQuestions: 6,
+      answers: [],
+    });
+    assessment = await getLessonAssessment(user.id, lessonId);
+    expect(assessment.bestPercent).toBe(50);
+    expect(assessment.passed).toBe(false);
+
+    await saveQuizAttempt({
+      userId: user.id,
+      quizId,
+      scorePoints: 5,
+      maxPoints: 6,
+      correctCount: 5,
+      totalQuestions: 6,
+      answers: [],
+    });
+    assessment = await getLessonAssessment(user.id, lessonId);
+    expect(assessment.bestPercent).toBe(83);
+    expect(assessment.passed).toBe(true);
+    expect(assessment.attempts).toBe(2);
+
+    const batch = await listCourseAssessments(user.id, courseId);
+    expect(batch[lessonId]).toMatchObject({ required: true, passed: true, bestPercent: 83 });
+  });
+
+  it('creates scoped random sessions that renew question ids', async () => {
+    const user = await createUser({
+      email: 'sessions@example.com',
+      name: 'Session',
+      passwordHash: 'x',
+    });
+    const other = await createUser({
+      email: 'sessions-other@example.com',
+      name: 'Other',
+      passwordHash: 'x',
+    });
+    const { courseId, lessonId } = await seedCourseWithLesson();
+    const quizId = await seedQuiz(lessonId, courseId);
+
+    const first = await createQuizSession(user.id, quizId, 3);
+    const second = await createQuizSession(user.id, quizId, 3);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(first?.questions).toHaveLength(3);
+    expect(second?.questions).toHaveLength(3);
+    expect(second?.questionIds.some((id) => first?.questionIds.includes(id))).toBe(false);
+
+    const stored = await getQuizSessionForUser(user.id, first!.id);
+    expect(stored?.quizId).toBe(quizId);
+    expect(stored?.questionIds).toEqual(first!.questionIds);
+    expect(await getQuizSessionForUser(other.id, first!.id)).toBeNull();
+
+    await deleteQuizSession(user.id, first!.id);
+    expect(await getQuizSessionForUser(user.id, first!.id)).toBeNull();
   });
 });

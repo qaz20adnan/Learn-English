@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
   lesson_id    TEXT REFERENCES lessons(id) ON DELETE SET NULL,
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   position     INTEGER NOT NULL DEFAULT 0,
+  pass_percent INTEGER NOT NULL DEFAULT 70,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
@@ -268,4 +269,22 @@ CREATE TABLE IF NOT EXISTS points_ledger (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_points_user ON points_ledger(user_id, created_at);
+
+-- Migration for databases created before pass criteria were introduced.
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS pass_percent INTEGER NOT NULL DEFAULT 70;
+
+-- A quiz session is a short-lived, randomised question set. Storing the chosen
+-- ids server-side keeps grading bound to exactly the questions the learner saw
+-- and allows every retry to draw a fresh set from the larger question bank.
+CREATE TABLE IF NOT EXISTS quiz_sessions (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  quiz_id      TEXT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+  question_ids TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  expires_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_sessions_user
+  ON quiz_sessions(user_id, quiz_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_quiz_sessions_expires ON quiz_sessions(expires_at);
 `;

@@ -181,8 +181,26 @@ export interface Quiz {
   lessonId: string | null;
   isPublished: boolean;
   position: number;
+  /** Minimum percentage required to unlock the next lesson. */
+  passPercent: number;
   questionCount?: number;
   totalPoints?: number;
+}
+
+/**
+ * The learner-specific assessment state for one lesson. Lessons without a
+ * published quiz are treated as already passed so they never block the path.
+ */
+export interface LessonAssessment {
+  lessonId: string;
+  quizId: string | null;
+  quizSlug: string | null;
+  quizTitle: string | null;
+  required: boolean;
+  passed: boolean;
+  passPercent: number;
+  bestPercent: number | null;
+  attempts: number;
 }
 
 export interface QuizAttempt {

@@ -4,11 +4,13 @@ import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth/dal';
 import {
   getCourseBySlug,
+  listCourseAssessments,
   listCourseProgress,
   listLessonsByCourse,
   listVocabulary,
 } from '@/lib/db/queries';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
+import { isLessonLocked } from '@/lib/progression';
 import type { Dictionary } from '@/lib/i18n';
 import { Badge, Card, LevelBadge, ProgressBar } from '@/components/ui';
 
@@ -38,13 +40,15 @@ export default async function CoursePage(props: PageProps<'/courses/[slug]'>) {
   const course = await getCourseBySlug(slug);
   if (!course || !course.isPublished) notFound();
 
-  const [lessons, progress, vocabulary] = await Promise.all([
+  const [lessons, progress, vocabulary, assessments] = await Promise.all([
     listLessonsByCourse(course.id),
     listCourseProgress(user.id, course.id),
     listVocabulary({ courseId: course.id, limit: 8 }),
+    listCourseAssessments(user.id, course.id),
   ]);
   const completed = lessons.filter((lesson) => progress[lesson.id]?.status === 'COMPLETED').length;
   const percent = lessons.length === 0 ? 0 : Math.round((completed / lessons.length) * 100);
+  const lessonIds = lessons.map((lesson) => lesson.id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -88,8 +92,11 @@ export default async function CoursePage(props: PageProps<'/courses/[slug]'>) {
           {lessons.map((lesson, index) => {
             const state = progress[lesson.id]?.status ?? 'NOT_STARTED';
             const meta = statusMeta(dict, state);
-            const actionLabel =
-              state === 'COMPLETED'
+            const assessment = assessments[lesson.id];
+            const locked = isLessonLocked(lessonIds, index, assessments);
+            const actionLabel = locked
+              ? dict.courses.action.locked
+              : state === 'COMPLETED'
                 ? dict.courses.action.retry
                 : state === 'IN_PROGRESS'
                   ? dict.courses.action.resume
@@ -101,16 +108,26 @@ export default async function CoursePage(props: PageProps<'/courses/[slug]'>) {
                 </span>
                 <div className="min-w-[12rem] flex-1">
                   <h3 className="font-bold">{lesson.title}</h3>
-                  <p className="text-sm text-muted">{lesson.summary}</p>
+                  {lesson.summary && lesson.summary !== lesson.title ? (
+                    <p className="text-sm text-muted">{lesson.summary}</p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted">
                     {lesson.durationMinutes} {dict.courses.minutesShort}
                   </span>
+                  {locked ? <Badge tone="warning">🔒 {dict.courses.status.locked}</Badge> : null}
+                  {!locked && assessment?.required && assessment.passed ? (
+                    <Badge tone="success">✓ {dict.courses.status.assessmentPassed}</Badge>
+                  ) : null}
                   <Badge tone={meta.tone}>{meta.label}</Badge>
                   <Link
                     href={`/courses/${course.slug}/lessons/${lesson.slug}`}
-                    className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-brand-700"
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white transition ${
+                      locked
+                        ? 'bg-amber-600 hover:bg-amber-700'
+                        : 'bg-brand-600 hover:bg-brand-700'
+                    }`}
                   >
                     {actionLabel}
                   </Link>

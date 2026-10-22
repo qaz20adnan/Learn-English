@@ -59,6 +59,28 @@ export default async function DashboardPage() {
         </div>
       </section>
 
+      {stats.reviewsDue > 0 ? (
+        <Link
+          href="/review"
+          className="card flex flex-wrap items-center justify-between gap-4 border-amber-300 bg-amber-50 p-5 transition hover:border-amber-400 dark:border-amber-900 dark:bg-amber-950/30"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl" aria-hidden>
+              🔁
+            </span>
+            <div>
+              <h2 className="font-extrabold">{dict.review.title}</h2>
+              <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">
+                {dict.review.duePrompt(stats.reviewsDue)}
+              </p>
+            </div>
+          </div>
+          <span className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white">
+            {dict.review.startNow}
+          </span>
+        </Link>
+      ) : null}
+
       <section>
         <SectionTitle
           title={dict.points.label}

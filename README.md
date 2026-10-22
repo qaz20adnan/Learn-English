@@ -8,11 +8,13 @@
 
 - **مصادقة حقيقية**: تجزئة كلمات المرور بـ bcryptjs، جلسات معتمة مخزنة في قاعدة البيانات (توكن مُجزّأ بـ sha256) داخل كوكي `httpOnly`. التحقق من الصلاحيات على الخادم في طبقة `dal.ts` فقط.
 - **أدوار**: طالب/مشرف. أول حساب مسجَّل يصبح مشرفًا (Bootstrap) — أو أنشئ مشرفًا عبر متغيرات البيئة.
-- **كورسات ودروس**: منهج **zAmerican English** الكامل (33 قائمة تشغيل حقيقية عبر معرّفات Playlist) + محتوى تجريبي احتياطي، صفحات تفاصيل الكورس والدرس، تسجيل تقدّم حقيقي.
-- **مزامنة المنهج**: أمر واحد يجلب كل قوائم تشغيل قناة zAmerican English ويدرّج الدروس والوسائط، **ويولّد تلقائيًا** مفردات واختبارًا قصيرًا لكل درس.
+- **كورسات ودروس**: منهج **zAmerican English** الكامل (33 قائمة تشغيل حقيقية عبر معرّفات Playlist) + محتوى تجريبي محفوظ للمطوّرين، صفحات تفاصيل الكورس والدرس، تسجيل تقدّم حقيقي.
+- **دورة تعلّم متسلسلة**: مراجعة إلزامية للدرس السابق، قفل الدرس التالي حتى اجتياز اختبار الدرس الحالي (70% افتراضيًا)، وروابط واضحة للمراجعة والاختبار.
+- **مزامنة المنهج**: أمر واحد يجلب كل قوائم تشغيل قناة zAmerican English (عبر YouTube Data API v3 عند توفر مفتاح، أو InnerTube/الكتالوج المهيكل بدون مفتاح)، ويدرّج العناوين والأوصاف ومعرّفات الفيديو والدروس والوسائط، **ويولّد تلقائيًا** مفردات وبنك أسئلة كبيرًا لكل درس.
 - **مشغّل وسائط**: YouTube IFrame API، Vimeo Player، HTML5 Audio/Video، مع حفظ موضع المشاهدة واستئنافه، ومعالجة الأخطاء وفتح المصدر البديل.
-- **مفردات + مراجعة متباعدة**: 28 مفردة، خوارزمية SM-2 قابلة للاختبار، بطاقات تفاعلية (Again/Hard/Good/Easy).
-- **قصص واختبارات**: 3 قصص مع أسئلة فهم، وتصحيح تلقائي، وحفظ أفضل نتيجة.
+- **مفردات + مراجعة متباعدة**: بنك مشترك يتوسّع مع كل درس، خوارزمية SM-2 قابلة للاختبار، بطاقات تفاعلية (Again/Hard/Good/Easy)، وتذكير مراجعة يومي على لوحة التعلّم.
+- **اختبارات ديناميكية**: جلسة اختبار مخزّنة على الخادم تسحب 8 أسئلة عشوائية من بنك مُتجدد، مع محاولات بأسئلة جديدة وربط مباشر بقفل الدروس.
+- **قصص واختبارات**: 19 قصة متدرجة (foundation → c1) مع أسئلة فهم، وقت قراءة تقديري، وتصحيح تلقائي وحفظ أفضل نتيجة، وزر للانتقال إلى القصة التالية.
 - **لوحة إدارة**: إدارة المستخدمين والأدوار، فحص روابط الوسائط، سجل تدقيق (audit log).
 - **تحقق من الوسائط**: فحص آلي عبر واجهات oEmbed الرسمية (YouTube/Vimeo) وطلب Range للملفات المباشرة، مع حالات صريحة: `UNVERIFIED / AVAILABLE / UNAVAILABLE / NEEDS_REVIEW`.
 - **مستويات CEFR**: تصنيف المحتوى على مسار `foundation → a1 → a2 → b1 → b2 → c1` (مع إمكانية إضافة `c2` لاحقًا) عبر نوع `Level` وفهرس `LEVELS`.
@@ -54,6 +56,8 @@ npm install
 | `DATABASE_URL` | رابط اتصال PostgreSQL (مطلوب). على Neon استخدم رابط **Pooled**. |
 | `DATABASE_SSL` | اضبطه على `disable` لقاعدة محلية بدون TLS. |
 | `DATABASE_POOL_MAX` | أقصى عدد اتصالات في التجمع (افتراضي: 3). |
+| `YOUTUBE_API_KEY` | اختياري. عند ضبطه يستخدم `db:sync` واجهة YouTube Data API v3 للأوصاف والمدد الرسمية. بدونه يعمل InnerTube/الكتالوج المهيكل. |
+| `YOUTUBE_CHANNEL_HANDLE` | اختياري، افتراضيًا `@zamericanenglish`، لاكتشاف قوائم القناة عند توفر المفتاح. |
 | `NEXT_PUBLIC_PROGRESS_HEARTBEAT_SECONDS` | دورية نبضة حفظ التقدّم من المشغّل. |
 | `NEXT_PUBLIC_SITE_URL` | رابط الموقع (اختياري). |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | تُستخدم وقت التغذية لإنشاء حساب مشرف. |
@@ -63,9 +67,10 @@ npm install
 ## إعداد قاعدة البيانات
 
 ```bash
-npm run db:setup        # إنشاء الجداول (idempotent)
-npm run db:seed         # تغذية المحتوى التجريبي (لا يمسّ المستخدمين)
+npm run db:setup        # إنشاء/ترقية الجداول (idempotent، يضيف أعمدة وجداول جديدة)
+npm run db:seed         # تغذية المحتوى التجريبي (للتطوير فقط؛ يعيد ضبط المحتوى)
 npm run db:sync         # مزامنة منهج zAmerican English كاملًا (يتطلب إنترنت)
+npm run db:stories      # إضافة/تحديث مكتبة القصص دون مسح التقدّم
 npm run db:verify-media # فحص روابط الوسائط عبر الشبكة
 ```
 
@@ -73,13 +78,18 @@ npm run db:verify-media # فحص روابط الوسائط عبر الشبكة
 
 ### مزامنة منهج zAmerican English
 
-يقرأ `npm run db:sync` قوائم التشغيل المعرَّفة في `src/lib/content/catalog.ts` (معرّفات Playlist حقيقية)، ويجلب فيديوهاتها من يوتيوب (مع تخزين مؤقت في `youtube_cache`)، ثم ينشئ الكورسات والدروس والوسائط، **ويولّد لكل درس مفردات واختبارًا** اعتمادًا على المستوى. الأمر **idempotent** (تكراره لا يضاعف البيانات ولا يمسّ تقدّم المتعلّمين).
+يقرأ `npm run db:sync` قوائم التشغيل المعرَّفة في `src/lib/content/catalog.ts` (كتالوج JSON مهيكل بمعرّفات Playlist حقيقية)، ويجلب فيديوهاتها من يوتيوب (مع تخزين مؤقت في `youtube_cache` وإعادة محاولة وتراجع إلى كاش قديم عند انقطاع الشبكة)، ثم ينشئ الكورسات والدروس والوسائط. عند ضبط `YOUTUBE_API_KEY` تُجلب الأوصاف والمدد من Data API v3؛ وبدونه تُستخدم InnerTube وصفحة القائمة العامة، مع إثراء الأوصاف من نقطة `player` العامة.
+
+**التوليد**: لكل درس تُولَّد مفردات من بنك CEFR، وبنك أسئلة يجمع أسئلة القواعد مع أسئلة مشتقة من مفردات الدرس (معنى الكلمة، الكلمة من المعنى، وإكمال جملة). تُسحب 8 أسئلة عشوائيًا لكل محاولة من البنك، ويُحدَّث البنك عند `--refresh-content`. الأمر **idempotent** (تكراره لا يضاعف البيانات ولا يمسّ تقدّم المتعلّمين).
 
 ```bash
 npm run db:sync                          # يستخدم الكاش إن وُجد
 npm run db:sync -- --refresh             # يعيد جلب قوائم التشغيل من يوتيوب
-npm run db:sync -- --refresh --refresh-content  # يعيد توليد المفردات والاختبارات
+npm run db:sync -- --refresh --refresh-content  # يعيد توليد المفردات وبنوك الأسئلة
+npm run db:stories                       # يضيف/يحدّث قصص المكتبة وأسئلتها
 ```
+
+> لا تشغّل `db:seed` على قاعدة الإنتاج: فهو يمسح محتوى الكورسات والقصص والتقدّم المرتبط بها. استخدم `db:sync` و`db:stories` للتحديث الآمن.
 
 ### حساب المشرف
 
@@ -99,7 +109,7 @@ npm run start    # تشغيل الإنتاج
 ```bash
 npm run lint       # ESLint
 npm run typecheck  # tsc --noEmit
-npm run test       # Vitest (74 اختبارًا، يعمل دون قاعدة بيانات عبر PGlite)
+npm run test       # Vitest (84 اختبارًا، يعمل دون قاعدة بيانات عبر PGlite)
 ```
 
 ## بنية المشروع
@@ -110,7 +120,7 @@ src/
     (auth)/            صفحات الدخول والتسجيل + Server Actions
     (app)/             لوحة التعلّم، الكورسات، الدروس، المفردات، المراجعة، القصص، التقدم، الإعدادات
     admin/             لوحة الإدارة (users, media)
-    api/               progress, review, stories/attempt, health
+    api/               progress, review, quizzes/attempt, quizzes/session, stories/attempt, health
     layout.tsx         الاتجاه RTL، الخطوط، تهيئة المظهر
   components/
     layout/            الهيدر، التنقل، مبدّل المظهر، قائمة المستخدم
@@ -122,8 +132,9 @@ src/
     auth/              password.ts, session.ts, dal.ts
     i18n/              config.ts, dictionaries.ts, server.ts, actions.ts
     srs.ts media.ts markdown.tsx validation.ts youtube.ts
-    content/             catalog.ts (منهج zAmerican), generate.ts (توليد المفردات/الأسئلة), seed-data.ts
-scripts/               setup-db, seed, sync-catalog, verify-media
+    progression.ts     قواعد فتح الدروس ونسبة النجاح (قابلة للاختبار)
+    content/             catalog.ts (منهج zAmerican), generate.ts (توليد المفردات/الأسئلة), story-library.ts, seed-data.ts
+scripts/               setup-db, seed, sync-catalog, sync-stories, verify-media
 ```
 
 ## التحقق من الوسائط — حدود مهمة
@@ -134,7 +145,7 @@ scripts/               setup-db, seed, sync-catalog, verify-media
 
 ## النشر على Netlify
 
-التطبيق يستخدم PostgreSQL، لذا لا يعتمد على قرص دائم ويعمل على Netlify Functions. ملف `netlify.toml` يضبط Node 24 ويشغّل `db:setup` قبل كل بناء (العملية idempotent).
+التطبيق يستخدم PostgreSQL، لذا لا يعتمد على قرص دائم ويعمل على Netlify Functions. ملف `netlify.toml` يضبط Node 24 ويشغّل `npm run build` فقط؛ ترقية المخطط عملية يدوية آمنة قبل النشر، حتى لا يعتمد البناء على قاعدة الإنتاج.
 
 1. **أنشئ قاعدة بيانات Neon** (مجانية): <https://neon.tech> → New Project → انسخ **Pooled connection string**
    (المضيف يحتوي `-pooler`).
@@ -148,7 +159,9 @@ scripts/               setup-db, seed, sync-catalog, verify-media
 
    ```bash
    npm run db:setup
-   npm run db:seed          # المحتوى التجريبي + مشرف اختياري عبر ADMIN_EMAIL/ADMIN_PASSWORD
+   npm run db:sync -- --refresh --refresh-content   # محتوى zAmerican الحقيقي
+   npm run db:stories                               # مكتبة القصص
+   # db:seed للتطوير المحلي فقط، وليس لقاعدة الإنتاج
    ```
 
 3. **ارفع المشروع إلى GitHub** (إن لم يكن مرفوعًا):
@@ -163,7 +176,7 @@ scripts/               setup-db, seed, sync-catalog, verify-media
    ```
 
 4. **اربط Netlify بالمستودع**: Netlify Dashboard → *Add new site* → *Import an existing project* → GitHub → اختر المستودع.
-   - Build command: `npm run db:setup && npm run build` (مضبوط في `netlify.toml`).
+   - Build command: `npm run build` (مضبوط في `netlify.toml`)، مع تشغيل `db:setup` يدويًا بعد أي تغيير في المخطط.
    - Publish directory: يكتشفه Netlify تلقائيًا لـ Next.js.
 5. **أضف متغيرات البيئة** في Netlify → *Site configuration* → *Environment variables*:
    - `DATABASE_URL` = رابط Neon Pooled.

@@ -1,9 +1,11 @@
 import { all, newId, nowIso, one, run } from './client';
 import { computeStreak, levelForPoints } from '../points';
+import { DEFAULT_QUIZ_PASS_PERCENT } from '../progression';
 import type {
   Course,
   CourseProgressSummary,
   Lesson,
+  LessonAssessment,
   LessonProgress,
   LessonWithMedia,
   Level,
@@ -164,6 +166,7 @@ interface QuizRow {
   lesson_id: string | null;
   is_published: number;
   position: number;
+  pass_percent: number;
   question_count?: number;
   total_points?: number;
 }
@@ -190,6 +193,15 @@ interface QuizAttemptRow {
   correct_count: number;
   total_questions: number;
   created_at: string;
+}
+
+interface QuizSessionRow {
+  id: string;
+  user_id: string;
+  quiz_id: string;
+  question_ids: string;
+  created_at: string;
+  expires_at: string;
 }
 
 interface PointsRow {
@@ -293,6 +305,7 @@ function toQuiz(row: QuizRow): Quiz {
     lessonId: row.lesson_id,
     isPublished: row.is_published === 1,
     position: row.position,
+    passPercent: row.pass_percent ?? DEFAULT_QUIZ_PASS_PERCENT,
     questionCount: row.question_count,
     totalPoints: row.total_points,
   };
@@ -1109,6 +1122,9 @@ export async function listQuizzes(): Promise<Quiz[]> {
     `SELECT q.*, ${QUIZ_COUNT_COLUMNS}
      FROM quizzes q
      WHERE q.is_published = 1
+       AND (q.course_id IS NULL OR EXISTS (
+         SELECT 1 FROM courses c WHERE c.id = q.course_id AND c.is_published = 1
+       ))
      ORDER BY q.position ASC, q.title ASC`,
   );
   return rows.map(toQuiz);
@@ -1116,7 +1132,11 @@ export async function listQuizzes(): Promise<Quiz[]> {
 
 export async function getQuizBySlug(slug: string): Promise<Quiz | null> {
   const row = await one<QuizRow>(
-    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.slug = ?`,
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q
+     WHERE q.slug = ?
+       AND (q.course_id IS NULL OR EXISTS (
+         SELECT 1 FROM courses c WHERE c.id = q.course_id AND c.is_published = 1
+       ))`,
     slug,
   );
   return row ? toQuiz(row) : null;
@@ -1124,7 +1144,11 @@ export async function getQuizBySlug(slug: string): Promise<Quiz | null> {
 
 export async function getQuizById(id: string): Promise<Quiz | null> {
   const row = await one<QuizRow>(
-    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q WHERE q.id = ?`,
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS} FROM quizzes q
+     WHERE q.id = ?
+       AND (q.course_id IS NULL OR EXISTS (
+         SELECT 1 FROM courses c WHERE c.id = q.course_id AND c.is_published = 1
+       ))`,
     id,
   );
   return row ? toQuiz(row) : null;
@@ -1146,6 +1170,240 @@ export async function listQuizQuestions(quizId: string): Promise<QuizQuestion[]>
     quizId,
   );
   return rows.map(toQuizQuestion);
+}
+
+/**
+ * Load only the questions that belong to a stored session, preserving the
+ * random order the learner received. The endpoint never trusts question ids
+ * sent by the browser.
+ */
+export async function listQuizQuestionsByIds(
+  quizId: string,
+  questionIds: string[],
+): Promise<QuizQuestion[]> {
+  if (questionIds.length === 0) return [];
+  const questions = await listQuizQuestions(quizId);
+  const byId = new Map(questions.map((question) => [question.id, question]));
+  return questionIds
+    .map((id) => byId.get(id))
+    .filter((question): question is QuizQuestion => Boolean(question));
+}
+
+/**
+ * The assessment state used for unlocking. A lesson without a quiz is always
+ * considered passed, while a quiz is passed only when the learner's best
+ * percentage reaches the quiz threshold.
+ */
+export async function getLessonAssessment(
+  userId: string,
+  lessonId: string,
+): Promise<LessonAssessment> {
+  const quiz = await getQuizByLessonId(lessonId);
+  if (!quiz) {
+    return {
+      lessonId,
+      quizId: null,
+      quizSlug: null,
+      quizTitle: null,
+      required: false,
+      passed: true,
+      passPercent: DEFAULT_QUIZ_PASS_PERCENT,
+      bestPercent: null,
+      attempts: 0,
+    };
+  }
+
+  const row = await one<{ attempts: number; best_percent: number | null }>(
+    `SELECT COUNT(*)::int AS attempts,
+            ROUND(MAX(CASE WHEN max_points > 0 THEN score_points * 100.0 / max_points ELSE 0 END))::int AS best_percent
+     FROM quiz_attempts WHERE user_id = ? AND quiz_id = ?`,
+    userId,
+    quiz.id,
+  );
+  const bestPercent = row?.best_percent ?? null;
+  return {
+    lessonId,
+    quizId: quiz.id,
+    quizSlug: quiz.slug,
+    quizTitle: quiz.titleAr ?? quiz.title,
+    required: true,
+    passed: bestPercent !== null && bestPercent >= quiz.passPercent,
+    passPercent: quiz.passPercent,
+    bestPercent,
+    attempts: row?.attempts ?? 0,
+  };
+}
+
+/**
+ * Batch version used by the course and lesson pages so a course with hundreds
+ * of lessons still needs one query instead of one per lesson.
+ */
+export async function listCourseAssessments(
+  userId: string,
+  courseId: string,
+): Promise<Record<string, LessonAssessment>> {
+  const rows = await all<{
+    lesson_id: string;
+    quiz_id: string | null;
+    quiz_slug: string | null;
+    quiz_title: string | null;
+    pass_percent: number | null;
+    attempts: number;
+    best_percent: number | null;
+  }>(
+    `SELECT l.id AS lesson_id,
+            q.id AS quiz_id,
+            q.slug AS quiz_slug,
+            COALESCE(q.title_ar, q.title) AS quiz_title,
+            q.pass_percent,
+            COUNT(qa.id)::int AS attempts,
+            ROUND(MAX(CASE WHEN qa.max_points > 0 THEN qa.score_points * 100.0 / qa.max_points ELSE 0 END))::int AS best_percent
+     FROM lessons l
+     LEFT JOIN quizzes q ON q.lesson_id = l.id AND q.is_published = 1
+     LEFT JOIN quiz_attempts qa ON qa.quiz_id = q.id AND qa.user_id = ?
+     WHERE l.course_id = ?
+     GROUP BY l.id, l.position, q.id, q.slug, q.title, q.title_ar, q.pass_percent, q.position
+     ORDER BY l.position ASC, q.position ASC`,
+    userId,
+    courseId,
+  );
+
+  const map: Record<string, LessonAssessment> = {};
+  for (const row of rows) {
+    const existing = map[row.lesson_id];
+    if (existing?.quizId && !row.quiz_id) continue;
+    if (!row.quiz_id) {
+      map[row.lesson_id] = {
+        lessonId: row.lesson_id,
+        quizId: null,
+        quizSlug: null,
+        quizTitle: null,
+        required: false,
+        passed: true,
+        passPercent: DEFAULT_QUIZ_PASS_PERCENT,
+        bestPercent: null,
+        attempts: 0,
+      };
+      continue;
+    }
+    const passPercent = row.pass_percent ?? DEFAULT_QUIZ_PASS_PERCENT;
+    const bestPercent = row.best_percent ?? null;
+    map[row.lesson_id] = {
+      lessonId: row.lesson_id,
+      quizId: row.quiz_id,
+      quizSlug: row.quiz_slug,
+      quizTitle: row.quiz_title,
+      required: true,
+      passed: bestPercent !== null && bestPercent >= passPercent,
+      passPercent,
+      bestPercent,
+      attempts: row.attempts,
+    };
+  }
+  return map;
+}
+
+export interface QuizSessionRecord {
+  id: string;
+  quizId: string;
+  questionIds: string[];
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface QuizSessionPayload extends QuizSessionRecord {
+  questions: QuizQuestion[];
+}
+
+const QUIZ_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * Draw a fresh random set of questions and persist exactly which ids were
+ * shown. Consecutive sessions exclude the previous set whenever the bank is
+ * large enough, so retries really are renewed instead of repeating the quiz.
+ */
+export async function createQuizSession(
+  userId: string,
+  quizId: string,
+  limit = 8,
+): Promise<QuizSessionPayload | null> {
+  const ts = nowIso();
+  await run('DELETE FROM quiz_sessions WHERE user_id = ? AND expires_at < ?', userId, ts);
+
+  const pool = await all<{ id: string }>(
+    'SELECT id FROM quiz_questions WHERE quiz_id = ? ORDER BY random()',
+    quizId,
+  );
+  if (pool.length === 0) return null;
+
+  const last = await one<{ question_ids: string }>(
+    `SELECT question_ids FROM quiz_sessions
+     WHERE user_id = ? AND quiz_id = ? ORDER BY created_at DESC LIMIT 1`,
+    userId,
+    quizId,
+  );
+  let previousIds: string[] = [];
+  if (last) {
+    try {
+      previousIds = JSON.parse(last.question_ids) as string[];
+    } catch {
+      previousIds = [];
+    }
+  }
+  const previous = new Set(previousIds);
+  const fresh = pool.filter((row) => !previous.has(row.id));
+  const candidates = fresh.length >= Math.min(limit, pool.length) ? fresh : pool;
+  const selected = candidates.slice(0, limit).map((row) => row.id);
+  if (selected.length === 0) return null;
+
+  const id = newId('qss');
+  const expiresAt = new Date(Date.now() + QUIZ_SESSION_TTL_MS).toISOString();
+  await run(
+    `INSERT INTO quiz_sessions (id, user_id, quiz_id, question_ids, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    id,
+    userId,
+    quizId,
+    JSON.stringify(selected),
+    ts,
+    expiresAt,
+  );
+
+  const questions = await listQuizQuestionsByIds(quizId, selected);
+  return { id, quizId, questionIds: selected, questions, createdAt: ts, expiresAt };
+}
+
+export async function getQuizSessionForUser(
+  userId: string,
+  sessionId: string,
+): Promise<QuizSessionRecord | null> {
+  const row = await one<QuizSessionRow>(
+    'SELECT * FROM quiz_sessions WHERE id = ? AND user_id = ?',
+    sessionId,
+    userId,
+  );
+  if (!row) return null;
+  if (row.expires_at < nowIso()) {
+    await run('DELETE FROM quiz_sessions WHERE id = ?', row.id);
+    return null;
+  }
+  let questionIds: string[] = [];
+  try {
+    questionIds = JSON.parse(row.question_ids) as string[];
+  } catch {
+    questionIds = [];
+  }
+  return {
+    id: row.id,
+    quizId: row.quiz_id,
+    questionIds,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+  };
+}
+
+export async function deleteQuizSession(userId: string, sessionId: string): Promise<void> {
+  await run('DELETE FROM quiz_sessions WHERE id = ? AND user_id = ?', sessionId, userId);
 }
 
 export async function saveQuizAttempt(input: {
@@ -1190,7 +1448,7 @@ export async function getBestQuizAttempt(
 ): Promise<QuizAttempt | null> {
   const row = await one<QuizAttemptRow>(
     `SELECT * FROM quiz_attempts WHERE user_id = ? AND quiz_id = ?
-     ORDER BY score_points DESC, created_at ASC LIMIT 1`,
+     ORDER BY (score_points * 1.0 / NULLIF(max_points, 0)) DESC, created_at ASC LIMIT 1`,
     userId,
     quizId,
   );
@@ -1200,14 +1458,15 @@ export async function getBestQuizAttempt(
 export async function listQuizBestScores(
   userId: string,
 ): Promise<Record<string, QuizBestScore>> {
-  const rows = await all<{ quiz_id: string; best: number; maxp: number }>(
-    `SELECT quiz_id, MAX(score_points)::int AS best, MAX(max_points)::int AS maxp
-     FROM quiz_attempts WHERE user_id = ? GROUP BY quiz_id`,
+  const rows = await all<{ quiz_id: string; score_points: number; max_points: number }>(
+    `SELECT DISTINCT ON (quiz_id) quiz_id, score_points, max_points
+     FROM quiz_attempts WHERE user_id = ?
+     ORDER BY quiz_id, (score_points * 1.0 / NULLIF(max_points, 0)) DESC, created_at ASC`,
     userId,
   );
   const map: Record<string, QuizBestScore> = {};
   for (const row of rows) {
-    map[row.quiz_id] = { scorePoints: row.best, maxPoints: row.maxp };
+    map[row.quiz_id] = { scorePoints: row.score_points, maxPoints: row.max_points };
   }
   return map;
 }

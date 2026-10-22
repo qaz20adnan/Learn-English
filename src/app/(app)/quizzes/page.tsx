@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth/dal';
 import { listQuizBestScores, listQuizzes } from '@/lib/db/queries';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
+import { quizPercent } from '@/lib/progression';
 import { Card, EmptyState, LevelBadge, SectionTitle } from '@/components/ui';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -26,6 +27,8 @@ export default async function QuizzesPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {quizzes.map((quiz) => {
             const score = best[quiz.id];
+            const percent = score ? quizPercent(score.scorePoints, score.maxPoints) : null;
+            const passed = percent !== null && percent >= quiz.passPercent;
             return (
               <Card key={quiz.id} className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-3">
@@ -45,6 +48,9 @@ export default async function QuizzesPage() {
                   <span>{t.questionsCount(quiz.questionCount ?? 0)}</span>
                   <span aria-hidden>·</span>
                   <span>{t.pointsAvailable(quiz.totalPoints ?? 0)}</span>
+                  <span aria-hidden>·</span>
+                  <span>{t.passMark(quiz.passPercent)}</span>
+                  {passed ? <span className="font-bold text-emerald-600">✓ {t.passedBadge}</span> : null}
                 </div>
 
                 <div className="mt-auto flex items-center justify-between gap-3 pt-1">

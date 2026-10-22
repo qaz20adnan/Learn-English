@@ -64,9 +64,19 @@ export const quizAnswerSchema = z.object({
   textAnswer: z.string().max(200).nullable().optional(),
 });
 
-export const quizAttemptSchema = z.object({
+export const quizAttemptSchema = z
+  .object({
+    quizId: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional(),
+    answers: z.array(quizAnswerSchema).max(100),
+  })
+  .refine((value) => Boolean(value.sessionId || value.quizId), {
+    message: 'جلسة الاختبار مطلوبة',
+    path: ['sessionId'],
+  });
+
+export const quizSessionSchema = z.object({
   quizId: z.string().min(1),
-  answers: z.array(quizAnswerSchema).max(100),
 });
 
 export const mediaVerifySchema = z.object({

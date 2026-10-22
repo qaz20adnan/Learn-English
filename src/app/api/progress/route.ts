@@ -3,8 +3,10 @@ import { getSessionUser } from '@/lib/auth/session';
 import { lessonProgressSchema } from '@/lib/validation';
 import {
   awardPoints,
+  getLessonAssessment,
   getLessonById,
   getLessonProgress,
+  listLessonsByCourse,
   saveLessonProgress,
 } from '@/lib/db/queries';
 import { POINTS } from '@/lib/points';
@@ -39,6 +41,25 @@ export async function POST(request: Request) {
 
   const previous = await getLessonProgress(user.id, lesson.id);
   const completed = parsed.data.completed === true || parsed.data.percent >= AUTO_COMPLETE_PERCENT;
+
+  if (completed) {
+    const courseLessons = await listLessonsByCourse(lesson.courseId);
+    const index = courseLessons.findIndex((item) => item.id === lesson.id);
+    if (index > 0) {
+      const previousLesson = courseLessons[index - 1];
+      const assessment = await getLessonAssessment(user.id, previousLesson.id);
+      if (assessment.required && !assessment.passed) {
+        return NextResponse.json(
+          {
+            error: 'أكمل اختبار الدرس السابق أولًا لفتح هذا الدرس.',
+            requiredQuiz: assessment.quizSlug,
+            passPercent: assessment.passPercent,
+          },
+          { status: 403 },
+        );
+      }
+    }
+  }
 
   const progress = await saveLessonProgress({
     userId: user.id,

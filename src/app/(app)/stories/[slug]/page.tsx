@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth/dal';
-import { getBestStoryScore, getStoryBySlug, listStoryQuestions } from '@/lib/db/queries';
+import {
+  getBestStoryScore,
+  getStoryBySlug,
+  listStories,
+  listStoryQuestions,
+} from '@/lib/db/queries';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 import { StoryQuiz, type QuizQuestion } from '@/components/stories/StoryQuiz';
 import { LevelBadge, SectionTitle } from '@/components/ui';
@@ -23,9 +28,10 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
   const story = await getStoryBySlug(slug);
   if (!story || !story.isPublished) notFound();
 
-  const [questions, best] = await Promise.all([
+  const [questions, best, stories] = await Promise.all([
     listStoryQuestions(story.id),
     getBestStoryScore(user.id, story.id),
+    listStories(),
   ]);
   const quiz: QuizQuestion[] = questions.map((question) => ({
     id: question.id,
@@ -33,6 +39,11 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
     options: question.options,
   }));
   const paragraphs = story.body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const words = story.body.trim().split(/\s+/).filter(Boolean).length;
+  const readingMinutes = Math.max(1, Math.round(words / 180));
+  const storyIndex = stories.findIndex((item) => item.id === story.id);
+  const nextStory =
+    storyIndex >= 0 && storyIndex < stories.length - 1 ? stories[storyIndex + 1] : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,6 +62,14 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
         <p dir="ltr" className="force-ltr text-sm text-muted">
           {story.title}
         </p>
+        <p className="text-sm text-muted">{story.summary}</p>
+        <div className="flex flex-wrap gap-2 text-xs text-muted">
+          <span>{dict.stories.readingTime(readingMinutes)}</span>
+          <span aria-hidden>·</span>
+          <span>{dict.stories.wordCount(words)}</span>
+          <span aria-hidden>·</span>
+          <span>{dict.stories.questions(questions.length)}</span>
+        </div>
       </header>
 
       <article dir="ltr" className="card force-ltr prose-lesson p-6 text-left">
@@ -63,6 +82,18 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
         <SectionTitle title={dict.stories.quizTitle} description={dict.stories.quizDescription} />
         <StoryQuiz storyId={story.id} questions={quiz} bestScore={best} />
       </section>
+
+      {nextStory ? (
+        <Link
+          href={`/stories/${nextStory.slug}`}
+          className="card flex items-center justify-between gap-3 p-5 transition hover:border-brand-400"
+        >
+          <span className="text-sm font-bold">{nextStory.coverEmoji} {nextStory.titleAr ?? nextStory.title}</span>
+          <span className="text-sm font-bold text-brand-600 dark:text-brand-300">
+            {dict.stories.nextStory}
+          </span>
+        </Link>
+      ) : null}
     </div>
   );
 }

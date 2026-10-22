@@ -2,7 +2,9 @@ import { one } from '@/lib/db/client';
 
 export async function GET() {
   try {
-    const row = await one<{ c: number }>('SELECT COUNT(*)::int AS c FROM courses');
+    const row = await one<{ c: number }>(
+      'SELECT COUNT(*)::int AS c FROM courses WHERE is_published = 1',
+    );
     return Response.json({
       status: 'ok',
       database: 'connected',

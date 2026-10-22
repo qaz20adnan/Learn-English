@@ -15,6 +15,7 @@
     "db:setup": "tsx --env-file-if-exists=.env.local scripts/setup-db.ts",
     "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "db:sync": "tsx --env-file-if-exists=.env.local scripts/sync-catalog.ts",
+    "db:stories": "tsx --env-file-if-exists=.env.local scripts/sync-stories.ts",
     "db:verify-media": "tsx --env-file-if-exists=.env.local scripts/verify-media.ts"
   },
   "dependencies": {

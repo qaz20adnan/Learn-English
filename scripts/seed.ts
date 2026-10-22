@@ -11,6 +11,7 @@ import { exec, newId, nowIso, one, run } from '../src/lib/db/client';
 import { hashPassword } from '../src/lib/auth/password';
 import { parseMediaUrl } from '../src/lib/media';
 import { SEED_COURSES, SEED_MEDIA, SEED_QUIZZES, SEED_STORIES } from '../src/lib/content/seed-data';
+import { STORY_LIBRARY } from '../src/lib/content/story-library';
 
 const ts = nowIso();
 
@@ -145,7 +146,7 @@ async function seedCourses(mediaIds: Map<string, string>): Promise<SeededIds> {
 }
 
 async function seedStories(): Promise<void> {
-  for (const [index, story] of SEED_STORIES.entries()) {
+  for (const [index, story] of [...SEED_STORIES, ...STORY_LIBRARY].entries()) {
     const storyId = newId('sty');
     await run(
       `INSERT INTO stories (id, slug, title, title_ar, level, cover_emoji, summary, body, is_published, position, created_at, updated_at)

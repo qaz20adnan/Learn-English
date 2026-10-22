@@ -338,13 +338,102 @@ export function generateVocabulary(level: Level, seed: string, count = 5): SeedV
   return rotate(VOCAB_BANK[level] ?? [], hash(seed), count);
 }
 
+function distinctValues<T>(items: T[], read: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const value = read(item);
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
 /**
- * A short revision quiz for a lesson, chosen deterministically from its slug.
- * Multiple-choice options are shuffled so the correct answer lands at varying
- * positions across questions and lessons.
+ * Build extra multiple-choice questions from the exact words attached to the
+ * lesson. This roughly doubles the pool and means a retry can ask about the
+ * same vocabulary from the other direction (meaning → word, word → meaning).
  */
-export function generateQuizQuestions(level: Level, seed: string, count = 4): SeedQuizQuestion[] {
-  return rotate(QUESTION_BANK[level] ?? [], hash(seed), count).map((question, index) => {
+function vocabularyQuestions(
+  level: Level,
+  seed: string,
+  words: SeedVocabulary[],
+): SeedQuizQuestion[] {
+  const bank = VOCAB_BANK[level] ?? [];
+  const questions: SeedQuizQuestion[] = [];
+
+  for (const word of words) {
+    const distractors = distinctValues(
+      rotate(
+        bank.filter(
+          (candidate) =>
+            candidate.term !== word.term && candidate.translation !== word.translation,
+        ),
+        hash(`${seed}:${word.term}:distractors`),
+        6,
+      ),
+      (candidate) => candidate.translation,
+    ).slice(0, 3);
+
+    if (distractors.length >= 3) {
+      const meaningOptions = shuffleWithSeed(
+        [word.translation, ...distractors.map((candidate) => candidate.translation)],
+        hash(`${seed}:${word.term}:meaning`),
+      );
+      questions.push({
+        type: 'MULTIPLE_CHOICE',
+        prompt: `What is the Arabic meaning of "${word.term}"?`,
+        options: meaningOptions,
+        answerIndex: meaningOptions.indexOf(word.translation),
+        explanation: `"${word.term}" means "${word.translation}".`,
+        points: 1,
+      });
+
+      const wordOptions = shuffleWithSeed(
+        [word.term, ...distractors.map((candidate) => candidate.term)],
+        hash(`${seed}:${word.term}:term`),
+      );
+      questions.push({
+        type: 'MULTIPLE_CHOICE',
+        prompt: `Which English word means "${word.translation}"?`,
+        options: wordOptions,
+        answerIndex: wordOptions.indexOf(word.term),
+        explanation: `The word is "${word.term}".`,
+        points: 1,
+      });
+    }
+
+    if (word.example) {
+      const gap = word.example.replace(new RegExp(`\\b${word.term}\\b`, 'i'), '_____');
+      if (gap !== word.example) {
+        questions.push({
+          type: 'FILL_BLANK',
+          prompt: `Complete the sentence: ${gap}`,
+          acceptedAnswers: [word.term],
+          explanation: `The complete sentence is: ${word.example}`,
+          points: 1,
+        });
+      }
+    }
+  }
+
+  return questions;
+}
+
+/**
+ * A revision quiz for a lesson, chosen deterministically from its slug. The
+ * pool mixes grammar questions with vocabulary questions generated from the
+ * lesson's own words, giving the randomised session runner enough material to
+ * renew questions on every retry.
+ */
+export function generateQuizQuestions(level: Level, seed: string, count = 18): SeedQuizQuestion[] {
+  const seedNumber = hash(seed);
+  const words = generateVocabulary(level, seed, 6);
+  const combined = [
+    ...vocabularyQuestions(level, seed, words),
+    ...(QUESTION_BANK[level] ?? []),
+  ];
+
+  return rotate(combined, seedNumber, count).map((question, index) => {
     if (
       question.type === 'MULTIPLE_CHOICE' &&
       question.options &&

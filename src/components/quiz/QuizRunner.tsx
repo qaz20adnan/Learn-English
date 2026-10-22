@@ -45,6 +45,17 @@ interface ApiResponse {
   totalQuestions: number;
   awardedPoints: number;
   bestScorePoints: number;
+  percent: number;
+  passPercent: number;
+  passed: boolean;
+  bestPercent: number;
+  error?: string;
+}
+
+interface SessionResponse {
+  sessionId: string;
+  questions: RunnerQuestion[];
+  passPercent: number;
   error?: string;
 }
 
@@ -56,23 +67,31 @@ interface AnswerState {
 
 export function QuizRunner({
   quizId,
+  initialSessionId,
   questions,
+  passPercent,
+  nextHref,
+  lessonHref,
 }: {
   quizId: string;
+  initialSessionId: string;
   questions: RunnerQuestion[];
+  passPercent: number;
+  nextHref: string | null;
+  lessonHref: string | null;
 }) {
   const { dict } = useI18n();
   const router = useRouter();
   const t = dict.quizzes.runner;
+  const [sessionId, setSessionId] = useState(initialSessionId);
   const [ordered, setOrdered] = useState<RunnerQuestion[]>(questions);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Present the questions in a fresh random order (grading is keyed by question
-  // id, so this is safe). Shuffled once per mount so a background refresh after
-  // submitting does not wipe the results.
+  // The server already randomises the questions; this second client-side shuffle
+  // only changes presentation on mount. Grading is by question id, so it is safe.
   const didShuffle = useRef(false);
   useEffect(() => {
     if (didShuffle.current) return;
@@ -104,6 +123,7 @@ export function QuizRunner({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quizId,
+          sessionId,
           answers: ordered.map((question) => {
             const answer = answers[question.id] ?? {};
             return {
@@ -126,27 +146,55 @@ export function QuizRunner({
     }
   }
 
-  function retry() {
-    setResult(null);
+  /** Ask the server for a genuinely new random set instead of reusing the pool. */
+  async function startFresh() {
+    setBusy(true);
     setError(null);
-    setAnswers({});
-    setOrdered(shuffleQuestions(questions));
+    try {
+      const res = await fetch('/api/quizzes/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quizId }),
+      });
+      const data = (await res.json()) as SessionResponse;
+      if (!res.ok) throw new Error(data.error ?? t.error);
+      if (!data.questions || data.questions.length === 0) throw new Error(t.error);
+      setSessionId(data.sessionId);
+      setOrdered(shuffleQuestions(data.questions));
+      setAnswers({});
+      setResult(null);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t.unknownError);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {!result ? (
+        <div className="card border-brand-200 bg-brand-50/60 p-4 text-sm font-semibold text-brand-800 dark:border-brand-900 dark:bg-brand-950/30 dark:text-brand-200">
+          {t.passThreshold(passPercent)}
+        </div>
+      ) : null}
+
       {result ? (
         <div
           className={cn(
             'card flex flex-col gap-2 p-5',
-            result.correctCount === result.totalQuestions
+            result.passed
               ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
-              : 'border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950/30',
+              : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
           )}
         >
           <h2 className="text-lg font-extrabold">
-            {t.result(result.scorePoints, result.maxPoints)}
+            {result.passed ? `✅ ${t.passedTitle}` : `🔁 ${t.notPassedTitle}`}
           </h2>
+          <p className="text-sm font-semibold text-muted">
+            {t.result(result.scorePoints, result.maxPoints)} ·{' '}
+            {t.passResult(result.percent, result.passPercent)}
+          </p>
           <p className="text-sm font-semibold text-muted">
             {t.correctCount(result.correctCount, result.totalQuestions)}
           </p>
@@ -292,11 +340,28 @@ export function QuizRunner({
           <>
             <button
               type="button"
-              onClick={retry}
-              className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700"
+              onClick={startFresh}
+              disabled={busy}
+              className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:opacity-60"
             >
-              {t.retry}
+              {busy ? t.preparing : t.retryFresh}
             </button>
+            {result?.passed && nextHref ? (
+              <Link
+                href={nextHref}
+                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700"
+              >
+                {t.nextLesson}
+              </Link>
+            ) : null}
+            {lessonHref ? (
+              <Link
+                href={lessonHref}
+                className="text-sm font-bold text-brand-600 hover:underline dark:text-brand-300"
+              >
+                {t.backToLesson}
+              </Link>
+            ) : null}
             <Link
               href="/quizzes"
               className="text-sm font-bold text-brand-600 hover:underline dark:text-brand-300"
@@ -314,6 +379,16 @@ export function QuizRunner({
             >
               {busy ? t.submitting : t.submit}
             </button>
+            {error ? (
+              <button
+                type="button"
+                onClick={startFresh}
+                disabled={busy}
+                className="rounded-xl border border-line px-5 py-2.5 text-sm font-bold transition hover:border-brand-400 disabled:opacity-60"
+              >
+                {busy ? t.preparing : t.retryFresh}
+              </button>
+            ) : null}
             {!answeredAll ? <span className="text-xs text-muted">{t.unanswered}</span> : null}
           </>
         )}

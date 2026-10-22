@@ -2,8 +2,16 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth/dal';
-import { getBestQuizAttempt, getQuizBySlug, listQuizQuestions } from '@/lib/db/queries';
+import {
+  createQuizSession,
+  getBestQuizAttempt,
+  getCourseById,
+  getLessonById,
+  getQuizBySlug,
+  listLessonsByCourse,
+} from '@/lib/db/queries';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
+import { quizPercent } from '@/lib/progression';
 import { Badge, LevelBadge, SectionTitle } from '@/components/ui';
 import { QuizRunner } from '@/components/quiz/QuizRunner';
 
@@ -27,18 +35,33 @@ export default async function QuizPage({ params }: { params: Promise<{ slug: str
   const quiz = await getQuizBySlug(slug);
   if (!quiz || !quiz.isPublished) notFound();
 
-  const [questions, best] = await Promise.all([
-    listQuizQuestions(quiz.id),
+  const [best, session] = await Promise.all([
     getBestQuizAttempt(user.id, quiz.id),
+    createQuizSession(user.id, quiz.id, 8),
   ]);
-  if (questions.length === 0) notFound();
+  if (!session) notFound();
 
-  const runnerQuestions = questions.map((question) => ({
-    id: question.id,
-    type: question.type,
-    prompt: question.prompt,
-    options: question.options,
-  }));
+  const bestPercent = best ? quizPercent(best.scorePoints, best.maxPoints) : null;
+
+  let lessonHref: string | null = null;
+  let nextHref: string | null = null;
+  if (quiz.lessonId) {
+    const lesson = await getLessonById(quiz.lessonId);
+    if (lesson) {
+      const [course, lessons] = await Promise.all([
+        getCourseById(lesson.courseId),
+        listLessonsByCourse(lesson.courseId),
+      ]);
+      if (course) {
+        lessonHref = `/courses/${course.slug}/lessons/${lesson.slug}`;
+        const index = lessons.findIndex((item) => item.id === lesson.id);
+        const next = index >= 0 && index < lessons.length - 1 ? lessons[index + 1] : null;
+        if (next) {
+          nextHref = `/courses/${course.slug}/lessons/${next.slug}`;
+        }
+      }
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,17 +80,33 @@ export default async function QuizPage({ params }: { params: Promise<{ slug: str
           />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          <Badge tone="info">{t.questionsCount(questions.length)}</Badge>
+          <Badge tone="info">{t.questionsCount(quiz.questionCount ?? session.questions.length)}</Badge>
+          <Badge tone="neutral">{t.questionsPerAttempt(session.questions.length)}</Badge>
           <Badge tone="brand">{t.pointsAvailable(quiz.totalPoints ?? 0)}</Badge>
+          <Badge tone="warning">{t.passMark(quiz.passPercent)}</Badge>
           {best ? (
-            <Badge tone="success">{t.bestScore(best.scorePoints, best.maxPoints)}</Badge>
+            <Badge tone={bestPercent !== null && bestPercent >= quiz.passPercent ? 'success' : 'danger'}>
+              {t.bestScore(best.scorePoints, best.maxPoints)}
+            </Badge>
           ) : (
             <Badge>{t.notAttempted}</Badge>
           )}
         </div>
       </div>
 
-      <QuizRunner quizId={quiz.id} questions={runnerQuestions} />
+      <QuizRunner
+        quizId={quiz.id}
+        initialSessionId={session.id}
+        questions={session.questions.map((question) => ({
+          id: question.id,
+          type: question.type,
+          prompt: question.prompt,
+          options: question.options,
+        }))}
+        passPercent={quiz.passPercent}
+        nextHref={nextHref}
+        lessonHref={lessonHref}
+      />
     </div>
   );
 }
