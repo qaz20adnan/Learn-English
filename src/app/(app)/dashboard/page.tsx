@@ -9,6 +9,8 @@ import {
 } from '@/lib/db/queries';
 import { Card, LevelBadge, ProgressBar, SectionTitle, StatCard } from '@/components/ui';
 import { PointsOverview } from '@/components/points/PointsOverview';
+import { MotivationalBanner } from '@/components/dashboard/MotivationalBanner';
+import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 
 export const metadata: Metadata = { title: 'لوحة التعلّم' };
@@ -31,18 +33,30 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="card flex flex-wrap items-center justify-between gap-4 bg-gradient-to-l from-brand-600 to-brand-500 p-6 text-white">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">{t.greeting(user.name)}</h1>
-          <p className="mt-1 text-sm text-white/85">{t.greetingSub}</p>
+      <section className="card relative overflow-hidden bg-gradient-to-l from-brand-600 via-brand-500 to-brand-400 p-6 text-white shadow-xl shadow-brand-600/15">
+        <div
+          aria-hidden
+          className="absolute -end-10 -top-16 h-44 w-44 rounded-full bg-white/15 blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="absolute -bottom-20 start-1/4 h-40 w-40 rounded-full bg-amber-200/20 blur-3xl"
+        />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">{t.greeting(user.name)}</h1>
+            <p className="mt-1 max-w-xl text-sm text-white/85">{t.greetingSub}</p>
+          </div>
+          <Link
+            href="/courses"
+            className="rounded-xl border border-white/20 bg-white/15 px-4 py-2 text-sm font-bold backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/25"
+          >
+            {t.browseCourses}
+          </Link>
         </div>
-        <Link
-          href="/courses"
-          className="rounded-xl bg-white/15 px-4 py-2 text-sm font-bold backdrop-blur transition hover:bg-white/25"
-        >
-          {t.browseCourses}
-        </Link>
       </section>
+
+      <MotivationalBanner />
 
       <section>
         <SectionTitle title={t.quickView} description={t.quickViewSub} />
@@ -156,6 +170,8 @@ export default async function DashboardPage() {
           </div>
         </section>
       ) : null}
+
+      <DeveloperCredit variant="card" />
     </div>
   );
 }

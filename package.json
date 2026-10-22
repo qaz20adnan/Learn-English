@@ -2,7 +2,7 @@
   "name": "english-journey-academy",
   "version": "0.1.0",
   "private": true,
-  "description": "English Journey Academy - a full-stack English learning platform (courses, media, vocabulary, stories, progress, admin).",
+  "description": "Fluently | فلوينتلي - a full-stack English learning platform (courses, media, vocabulary, stories, progress, admin).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

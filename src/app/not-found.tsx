@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { getDictionary } from '@/lib/i18n';
 import { useCookieLocale } from '@/components/i18n/useCookieLocale';
+import { BrandLogo } from '@/components/layout/BrandLogo';
 
 export default function NotFound() {
   const dict = getDictionary(useCookieLocale());
@@ -10,9 +11,10 @@ export default function NotFound() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
-      <span className="text-5xl" aria-hidden>
-        🧭
-      </span>
+      <BrandLogo size="lg" />
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-brand-600 dark:text-brand-300">
+        Fluently | فلوينتلي
+      </p>
       <h1 className="text-2xl font-black">{t.title}</h1>
       <p className="text-sm text-muted">{t.subtitle}</p>
       <div className="flex gap-3">

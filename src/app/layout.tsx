@@ -15,12 +15,27 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "أكاديمية رحلة الإنجليزية",
-    template: "%s · أكاديمية رحلة الإنجليزية",
+    default: "Fluently | فلوينتلي — أكاديمية التحدث بالإنجليزية",
+    template: "%s · Fluently | فلوينتلي",
   },
   description:
-    "منصة عربية لتعلم الإنجليزية: كورسات منظمة، مشغل فيديو وصوت، مفردات مع مراجعة ذكية، قصص واختبارات، وتتبع للتقدم.",
-  applicationName: "English Journey Academy",
+    "Fluently | فلوينتلي — منصة عربية حديثة لتعلّم الإنجليزية: كورسات منظمة، مشغل فيديو وصوت، مفردات مع مراجعة ذكية، قصص واختبارات، وتتبع للتقدم.",
+  applicationName: "Fluently | فلوينتلي",
+  authors: [{ name: "Eng. Adnan Al-Qadi" }],
+  creator: "Eng. Adnan Al-Qadi",
+  keywords: [
+    "تعلم الإنجليزية",
+    "كورسات إنجليزية",
+    "محادثة إنجليزية",
+    "Fluently",
+    "English learning",
+  ],
+  openGraph: {
+    title: "Fluently | فلوينتلي — أكاديمية التحدث بالإنجليزية",
+    description:
+      "كورسات منظمة، مشغل موحّد، مفردات بمراجعة ذكية، قصص واختبارات، وتتبع دقيق للتقدم.",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {

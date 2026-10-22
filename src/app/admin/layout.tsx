@@ -5,6 +5,7 @@ import { requireAdmin } from '@/lib/auth/dal';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 import { LocaleProvider } from '@/components/i18n/LocaleProvider';
 import { HeaderFallback, SiteHeader } from '@/components/layout/SiteHeader';
+import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import type { Dictionary } from '@/lib/i18n';
 
 export const metadata = { title: 'لوحة الإدارة' };
@@ -57,8 +58,13 @@ async function AdminShell({ children }: { children: ReactNode }) {
           </Suspense>
         </div>
       </main>
-      <footer className="border-t border-line px-4 py-5 text-center text-xs text-muted">
-        {dict.admin.footer}
+      <footer className="border-t border-line/80 px-4 py-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3">
+          <DeveloperCredit />
+          <p className="border-t border-line/60 pt-3 text-center text-[11px] text-muted">
+            {dict.admin.footer}
+          </p>
+        </div>
       </footer>
     </LocaleProvider>
   );

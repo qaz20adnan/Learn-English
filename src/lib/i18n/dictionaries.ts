@@ -9,8 +9,10 @@ import type { Level, VerificationStatus } from '../types';
  */
 const ar = {
   common: {
-    appName: 'أكاديمية رحلة الإنجليزية',
-    appNameShort: 'رحلة الإنجليزية',
+    appName: 'Fluently | فلوينتلي — أكاديمية التحدث بالإنجليزية',
+    appNameShort: 'فلوينتلي',
+    brandLatin: 'FLUENTLY',
+    brandTagline: 'أكاديمية التحدث بالإنجليزية',
     login: 'دخول',
     logout: 'تسجيل الخروج',
     adminBadge: 'مشرف',
@@ -45,11 +47,34 @@ const ar = {
     favorites: 'المفضلة',
     progress: 'تقدّمي',
   },
+  navHints: {
+    dashboard: 'نظرة سريعة على تقدمك ومهام اليوم',
+    courses: 'تصفّح المسارات التعليمية المرتبة',
+    quizzes: 'اختبر مستواك وتحدّى نفسك',
+    stories: 'اقرأ قصصًا مبسّطة واختبر فهمك',
+    vocabulary: 'ابنِ بنك كلماتك وراجعه بذكاء',
+    review: 'بطاقات المراجعة المتباعدة المستحقة',
+    favorites: 'كلماتك المحفوظة في مكان واحد',
+    progress: 'تابع إنجازك ونقاطك عبر الوقت',
+  },
   theme: {
     label: 'المظهر',
-    light: 'فاتح',
-    dark: 'داكن',
-    system: 'النظام',
+    choose: 'اختر مظهر القراءة',
+    current: 'المظهر الحالي',
+    system: 'حسب النظام',
+    light: 'فاتح كلاسيكي',
+    dark: 'داكن هادئ',
+    emerald: 'زمردي نوردي',
+    sepia: 'عنبري دافئ',
+    midnight: 'منتصف الليل',
+    descriptions: {
+      system: 'يتبع إعداد جهازك تلقائيًا',
+      light: 'نقي ومشرق للاستخدام النهاري',
+      dark: 'تباين مريح في الإضاءة المنخفضة',
+      emerald: 'كالما والهدوء لجلسات القراءة الطويلة',
+      sepia: 'ورقي دافئ يقلل إجهاد العين',
+      midnight: 'أزرق داكن احترافي بتباين عالٍ',
+    },
   },
   language: {
     label: 'لغة الواجهة',
@@ -66,7 +91,7 @@ const ar = {
     c1: 'C1 متقدم',
   } satisfies Record<Level, string>,
   auth: {
-    footer: 'English Journey Academy — منصة تعلم إنجليزية بالعربية.',
+    footer: 'Fluently | فلوينتلي — أكاديمية التحدث بالإنجليزية.',
     loginTitle: 'مرحبًا بعودتك',
     loginSubtitle: 'سجّل الدخول لمتابعة رحلتك في تعلم الإنجليزية.',
     registerTitle: 'أنشئ حسابك',
@@ -94,7 +119,7 @@ const ar = {
     savedOk: 'تم حفظ الإعدادات ✅',
     invalidValues: 'قيم غير صالحة',
     appearance: 'المظهر',
-    appearanceHint: 'يُحفظ اختيار المظهر في هذا المتصفح ويُطبّق فورًا.',
+    appearanceHint: 'خمس لوحات قراءة مريحة، تُحفظ في هذا المتصفح وتُطبّق فورًا.',
     account: 'الحساب',
     role: 'الدور',
   },
@@ -102,6 +127,12 @@ const ar = {
     title: 'لوحة التعلّم',
     greeting: (name: string) => `أهلًا ${name} 👋`,
     greetingSub: 'واصل رحلتك اليوم. الالتزام القصير المتكرر أفضل من الجلسات الطويلة.',
+    quoteLabel: 'جرعة تحفيز اليوم',
+    quoteHint: 'اقتباس جديد كل بضع ثوانٍ',
+    nextQuote: 'الاقتباس التالي',
+    previousQuote: 'الاقتباس السابق',
+    pauseQuote: 'إيقاف التدوير',
+    playQuote: 'تشغيل التدوير',
     browseCourses: 'تصفّح الكورسات',
     quickView: 'نظرة سريعة',
     quickViewSub: 'أرقامك المحدّثة من قاعدة البيانات.',
@@ -130,7 +161,7 @@ const ar = {
     overview: 'نظرة عامة',
     users: 'المستخدمون',
     media: 'الوسائط',
-    footer: 'English Journey Academy · لوحة الإدارة',
+    footer: 'Fluently | فلوينتلي · لوحة الإدارة',
     verifying: 'جارٍ التحقق من الصلاحيات…',
     loading: 'جارٍ التحميل…',
     overviewPage: {
@@ -474,7 +505,9 @@ const ar = {
   },
   landing: {
     metaTitle: 'تعلّم الإنجليزية خطوة بخطوة',
-    brand: 'أكاديمية رحلة الإنجليزية',
+    metaDescription:
+      'منصة عربية حديثة لتعلّم الإنجليزية: كورسات منظمة، مشغل موحّد، مفردات بمراجعة ذكية، قصص واختبارات، وتتبع دقيق للتقدم.',
+    brand: 'Fluently | فلوينتلي',
     signIn: 'تسجيل الدخول',
     startNow: 'ابدأ الآن',
     badge: 'منصة عربية · مجانية للبدء',
@@ -484,7 +517,7 @@ const ar = {
     ctaRegister: 'أنشئ حسابك المجاني',
     ctaLogin: 'لدي حساب',
     footer:
-      'English Journey Academy — بُني بـ Next.js وSQLite. جميع الروابط الخارجية تُفحص عبر واجهاتها الرسمية.',
+      'Fluently | فلوينتلي — بُني بـ Next.js وPostgreSQL. جميع الروابط الخارجية تُفحص عبر واجهاتها الرسمية.',
     features: [
       {
         emoji: '📚',
@@ -524,8 +557,10 @@ export type Dictionary = typeof ar;
 
 const en: Dictionary = {
   common: {
-    appName: 'English Journey Academy',
-    appNameShort: 'English Journey',
+    appName: 'Fluently — English Speaking Academy',
+    appNameShort: 'Fluently',
+    brandLatin: 'فلوينتلي',
+    brandTagline: 'English Speaking Academy',
     login: 'Sign in',
     logout: 'Sign out',
     adminBadge: 'Admin',
@@ -560,11 +595,34 @@ const en: Dictionary = {
     favorites: 'Favorites',
     progress: 'Progress',
   },
+  navHints: {
+    dashboard: 'A quick view of your progress and today’s tasks',
+    courses: 'Browse the ordered learning paths',
+    quizzes: 'Test your level and challenge yourself',
+    stories: 'Read simplified stories and check your understanding',
+    vocabulary: 'Build your word bank and review it smartly',
+    review: 'Your due spaced-repetition cards',
+    favorites: 'Your saved words in one place',
+    progress: 'Track your completion and points over time',
+  },
   theme: {
     label: 'Theme',
-    light: 'Light',
-    dark: 'Dark',
-    system: 'System',
+    choose: 'Choose your reading theme',
+    current: 'Current theme',
+    system: 'Follow system',
+    light: 'Classic light',
+    dark: 'Calm dark',
+    emerald: 'Nordic emerald',
+    sepia: 'Warm sepia',
+    midnight: 'Midnight cyber',
+    descriptions: {
+      system: 'Matches your device setting automatically',
+      light: 'Clean and bright for daytime study',
+      dark: 'Comfortable contrast in low light',
+      emerald: 'Calm, low-strain teal for long sessions',
+      sepia: 'Warm paper tones that reduce eye fatigue',
+      midnight: 'Professional deep navy with high contrast',
+    },
   },
   language: {
     label: 'Interface language',
@@ -581,7 +639,7 @@ const en: Dictionary = {
     c1: 'C1 Advanced',
   },
   auth: {
-    footer: 'English Journey Academy — learn English through Arabic.',
+    footer: 'Fluently — English Speaking Academy.',
     loginTitle: 'Welcome back',
     loginSubtitle: 'Sign in to continue your English learning journey.',
     registerTitle: 'Create your account',
@@ -609,7 +667,7 @@ const en: Dictionary = {
     savedOk: 'Settings saved ✅',
     invalidValues: 'Invalid values',
     appearance: 'Appearance',
-    appearanceHint: 'Your theme choice is saved in this browser and applied instantly.',
+    appearanceHint: 'Five comfortable reading palettes, saved in this browser and applied instantly.',
     account: 'Account',
     role: 'Role',
   },
@@ -617,6 +675,12 @@ const en: Dictionary = {
     title: 'Learning dashboard',
     greeting: (name: string) => `Welcome, ${name} 👋`,
     greetingSub: 'Keep your streak going. Short, regular sessions beat long marathons.',
+    quoteLabel: 'Your daily spark',
+    quoteHint: 'A fresh quote every few seconds',
+    nextQuote: 'Next quote',
+    previousQuote: 'Previous quote',
+    pauseQuote: 'Pause rotation',
+    playQuote: 'Play rotation',
     browseCourses: 'Browse courses',
     quickView: 'Quick view',
     quickViewSub: 'Your latest numbers, straight from the database.',
@@ -645,7 +709,7 @@ const en: Dictionary = {
     overview: 'Overview',
     users: 'Users',
     media: 'Media',
-    footer: 'English Journey Academy · Admin',
+    footer: 'Fluently · Admin',
     verifying: 'Checking permissions…',
     loading: 'Loading…',
     overviewPage: {
@@ -994,7 +1058,9 @@ const en: Dictionary = {
   },
   landing: {
     metaTitle: 'Learn English step by step',
-    brand: 'English Journey Academy',
+    metaDescription:
+      'A modern Arabic-first English learning platform with structured courses, unified media, smart vocabulary review, stories, quizzes, and precise progress tracking.',
+    brand: 'Fluently',
     signIn: 'Sign in',
     startNow: 'Get started',
     badge: 'Arabic platform · Free to start',
@@ -1004,7 +1070,7 @@ const en: Dictionary = {
     ctaRegister: 'Create your free account',
     ctaLogin: 'I have an account',
     footer:
-      'English Journey Academy — built with Next.js and SQLite. All external links are checked through their official APIs.',
+      'Fluently — built with Next.js and PostgreSQL. All external links are checked through their official APIs.',
     features: [
       {
         emoji: '📚',

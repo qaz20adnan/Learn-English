@@ -38,6 +38,7 @@ export function LanguageToggle() {
           type="button"
           onClick={() => choose(option)}
           aria-pressed={locale === option}
+          aria-label={localeLabel(option)}
           disabled={pending}
           className={cn(
             'rounded-lg px-2 py-1 text-xs font-bold transition disabled:opacity-60',
@@ -46,7 +47,10 @@ export function LanguageToggle() {
               : 'text-muted hover:text-brand-600',
           )}
         >
-          {localeLabel(option)}
+          <span aria-hidden className="sm:hidden">
+            {option === 'ar' ? 'ع' : 'EN'}
+          </span>
+          <span className="hidden sm:inline">{localeLabel(option)}</span>
         </button>
       ))}
     </div>

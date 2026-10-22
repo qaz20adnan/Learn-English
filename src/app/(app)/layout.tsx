@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import type { ReactNode } from 'react';
 import { HeaderFallback, SiteHeader } from '@/components/layout/SiteHeader';
+import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { LocaleProvider } from '@/components/i18n/LocaleProvider';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 
@@ -35,8 +36,18 @@ async function AppChrome({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
         <Suspense fallback={<PageFallback />}>{children}</Suspense>
       </main>
-      <footer className="border-t border-line px-4 py-5 text-center text-xs text-muted">
-        {dict.common.appName} · {dict.common.footerNote}
+      <footer className="border-t border-line/80">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-6">
+          <DeveloperCredit />
+          <div className="flex flex-col items-center justify-between gap-1 border-t border-line/60 pt-3 text-center text-[11px] text-muted sm:flex-row sm:text-start">
+            <span>
+              {dict.common.appName} · {dict.common.footerNote}
+            </span>
+            <span dir="ltr" className="force-ltr">
+              © Fluently
+            </span>
+          </div>
+        </div>
       </footer>
     </LocaleProvider>
   );

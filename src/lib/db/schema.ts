@@ -1,5 +1,5 @@
 /**
- * PostgreSQL schema for English Journey Academy.
+ * PostgreSQL schema for Fluently | فلوينتلي.
  *
  * The schema is embedded as a TypeScript string so it ships with the CLI
  * scripts and works on any PostgreSQL host (Neon, Supabase, Railway, ...).
