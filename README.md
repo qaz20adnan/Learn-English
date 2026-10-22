@@ -35,7 +35,7 @@
 ## المتطلبات
 
 - **Node.js 24 أو أحدث**.
-- **قاعدة بيانات PostgreSQL** (يُنصح بـ [Neon](https://neon.tech) للاستضافة المجانية على Netlify).
+- **قاعدة بيانات PostgreSQL** (يُنصح بـ [Neon](https://neon.tech) للاستضافة المجانية على Vercel).
 - npm.
 
 ## التثبيت
@@ -143,9 +143,11 @@ scripts/               setup-db, seed, sync-catalog, sync-stories, verify-media
 - لا يجري تجاوز أي قيود تضمين أو خصوصية؛ الروابط غير القابلة للتضمين تُعرض مع زر «فتح المصدر».
 - المحتوى التجريبي يستخدم روابط عيّنات عامة (YouTube/Vimeo/SoundHelix/MDN/SampleLib) لأغراض العرض، وبعضها مجرد تجهيزات اختبار متوقّع أن تفشل (`fixture-invalid-url`, `fixture-unavailable`).
 
-## النشر على Netlify
+## النشر على Vercel
 
-التطبيق يستخدم PostgreSQL، لذا لا يعتمد على قرص دائم ويعمل على Netlify Functions. ملف `netlify.toml` يضبط Node 24 ويشغّل `npm run build` فقط؛ ترقية المخطط عملية يدوية آمنة قبل النشر، حتى لا يعتمد البناء على قاعدة الإنتاج.
+التطبيق يستخدم PostgreSQL، لذا لا يعتمد على قرص دائم ويعمل على Vercel Functions. المشروع الحالي منشور على
+<https://fluently-academy.vercel.app> ضمن فريق `adnan-mohamed`، ويُبنى تلقائيًا عند كل دفع إلى فرع `main`
+بعد ربط المستودع بتطبيق Vercel على GitHub.
 
 1. **أنشئ قاعدة بيانات Neon** (مجانية): <https://neon.tech> → New Project → انسخ **Pooled connection string**
    (المضيف يحتوي `-pooler`).
@@ -169,27 +171,30 @@ scripts/               setup-db, seed, sync-catalog, sync-stories, verify-media
    ```bash
    git init
    git add .
-   git commit -m "Migrate database to PostgreSQL and prepare Netlify deployment"
+   git commit -m "Migrate database to PostgreSQL and prepare Vercel deployment"
    git branch -M main
    git remote add origin https://github.com/<user>/<repo>.git
    git push -u origin main
    ```
 
-4. **اربط Netlify بالمستودع**: Netlify Dashboard → *Add new site* → *Import an existing project* → GitHub → اختر المستودع.
-   - Build command: `npm run build` (مضبوط في `netlify.toml`)، مع تشغيل `db:setup` يدويًا بعد أي تغيير في المخطط.
-   - Publish directory: يكتشفه Netlify تلقائيًا لـ Next.js.
-5. **أضف متغيرات البيئة** في Netlify → *Site configuration* → *Environment variables*:
-   - `DATABASE_URL` = رابط Neon Pooled.
+4. **أنشئ مشروع Vercel واربطه بالمستودع**:
+   - من لوحة Vercel اختر *Add New…* → *Project* → *Import Git Repository*.
+   - إن لم يظهر المستودع، ثبّت [تطبيق Vercel على GitHub](https://github.com/apps/vercel/installations/new)
+     وامنحه صلاحية المستودع، ثم أعد المحاولة.
+   - إعدادات البناء تُكتشف تلقائيًا لـ Next.js. اضبط إصدار Node.js على **24.x**.
+5. **أضف متغيرات البيئة** في Vercel → *Project Settings* → *Environment Variables*:
+   - `DATABASE_URL` = رابط Neon Pooled (Production وPreview وDevelopment).
+   - `SESSION_COOKIE_SECURE` = `true` في Production وPreview.
+   - `NEXT_PUBLIC_SITE_URL` = `https://fluently-academy.vercel.app` (اختياري).
    - `ADMIN_EMAIL` و`ADMIN_PASSWORD` (اختياري، لإنشاء مشرف).
-   - `NEXT_PUBLIC_SITE_URL` = `https://<site-name>.netlify.app` (اختياري).
-6. **Deploy**. ستحصل على رابط دائم بصيغة `https://<site-name>.netlify.app` يمكنك تغييره من
-   *Domain management* → *Options* → *Edit site name*، أو ربط نطاق مخصص.
+6. **Deploy**. ستحصل على رابط دائم بصيغة `https://<project>.vercel.app`، ويمكنك ربط نطاق مخصص من
+   *Project Settings* → *Domains*.
 
 > **ملاحظات مهمة**
-> - استخدم رابط Neon **Pooled** مع `pg`، فعدد اتصالات Netlify Functions غير ثابت.
+> - استخدم رابط Neon **Pooled** مع `pg`، فعدد اتصالات Vercel Functions غير ثابت.
 > - لا تشغّل `db:seed` على كل نشر لأنه يعيد ضبط محتوى الكورسات (لا يمسّ المستخدمين).
-> - كوكي الجلسة يصبح `Secure` تلقائيًا عند الوصول عبر HTTPS، وNetlify توفّره افتراضيًا.
-> - الأسرار تُضبط في Netlify فقط، ولا تُرفع إلى GitHub.
+> - كوكي الجلسة يصبح `Secure` تلقائيًا عند الوصول عبر HTTPS، ويمكن تثبيته عبر `SESSION_COOKIE_SECURE=true`.
+> - الأسرار تُضبط في Vercel فقط، ولا تُرفع إلى GitHub.
 
 ## القيود الحالية (مقارنة بالمواصفة الكاملة)
 
