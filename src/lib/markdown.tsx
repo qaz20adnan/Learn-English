@@ -77,6 +77,11 @@ export function renderMarkdown(markdown: string): ReactNode[] {
       continue;
     }
 
+    if (line.startsWith('### ')) {
+      blocks.push(<h3 key={key++}>{renderInline(line.slice(4))}</h3>);
+      i += 1;
+      continue;
+    }
     if (line.startsWith('## ')) {
       blocks.push(<h2 key={key++}>{renderInline(line.slice(3))}</h2>);
       i += 1;
@@ -115,6 +120,16 @@ export function renderMarkdown(markdown: string): ReactNode[] {
       paragraph.push(lines[i]);
       i += 1;
     }
+
+    // Defensive fallback for a line that looks like a block start but was not
+    // recognised above (for example a malformed heading). Without this, the
+    // outer loop would not advance and rendering would run forever.
+    if (paragraph.length === 0) {
+      blocks.push(<p key={key++}>{renderInline(line)}</p>);
+      i += 1;
+      continue;
+    }
+
     blocks.push(<p key={key++}>{renderInline(paragraph.join(' '))}</p>);
   }
 

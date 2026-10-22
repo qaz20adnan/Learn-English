@@ -8,9 +8,17 @@ function renderInto(markdown: string) {
 
 describe('renderMarkdown', () => {
   it('renders headings', () => {
-    renderInto('# Title\n## Section');
+    renderInto('# Title\n## Section\n### Details');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Title');
     expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Section');
+    expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent('Details');
+  });
+
+  it('advances on malformed block-start lines instead of looping', () => {
+    const { container } = renderInto('#hashtag\n###missing-space\n####\nstill readable');
+    expect(container.textContent).toContain('#hashtag');
+    expect(container.textContent).toContain('###missing-space');
+    expect(container.textContent).toContain('still readable');
   });
 
   it('renders bold and inline code without injecting HTML', () => {
