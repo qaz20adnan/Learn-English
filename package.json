@@ -16,7 +16,8 @@
     "db:seed": "tsx --env-file-if-exists=.env.local scripts/seed.ts",
     "db:sync": "tsx --env-file-if-exists=.env.local scripts/sync-catalog.ts",
     "db:stories": "tsx --env-file-if-exists=.env.local scripts/sync-stories.ts",
-    "db:verify-media": "tsx --env-file-if-exists=.env.local scripts/verify-media.ts"
+    "db:verify-media": "tsx --env-file-if-exists=.env.local scripts/verify-media.ts",
+    "db:clean-text": "tsx --env-file-if-exists=.env.local scripts/clean-lesson-text.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
