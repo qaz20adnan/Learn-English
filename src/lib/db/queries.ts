@@ -1787,3 +1787,25 @@ export async function logAudit(input: {
     nowIso(),
   );
 }
+
+export type PublicCounts = {
+  courses: number;
+  lessons: number;
+  quizzes: number;
+  stories: number;
+  vocabulary: number;
+};
+
+/** Live content counts for the public landing page — real data only, no marketing numbers. */
+export async function getPublicCounts(): Promise<PublicCounts> {
+  const row = await one<PublicCounts>(`
+    SELECT
+      (SELECT COUNT(*)::int FROM courses) AS courses,
+      (SELECT COUNT(*)::int FROM lessons) AS lessons,
+      (SELECT COUNT(*)::int FROM quizzes) AS quizzes,
+      (SELECT COUNT(*)::int FROM stories) AS stories,
+      (SELECT COUNT(*)::int FROM vocabulary) AS vocabulary
+  `);
+  if (!row) throw new Error('public counts unavailable');
+  return row;
+}
