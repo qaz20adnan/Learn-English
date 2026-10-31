@@ -2,8 +2,10 @@ import { cn } from '@/lib/cn';
 import { BrandLogo } from './BrandLogo';
 
 /**
- * Bilingual developer attribution. Used in the global footer, on the dashboard
- * and in the profile/settings area.
+ * Bilingual developer attribution. Used once per page: in the global footers
+ * (app/auth/admin layouts) and on the public homepage. The per-page card
+ * duplicates in dashboard/settings were removed in Sprint 0 (T6) — the layout
+ * footer already renders the credit on every page.
  */
 export function DeveloperCredit({
   variant = 'footer',
