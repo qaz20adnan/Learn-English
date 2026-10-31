@@ -233,6 +233,23 @@ const ar = {
         `أفادت واجهة ${provider} بأن هذا المحتوى قد يمنع التضمين أو أنه غير متاح.${note ? ` (${note})` : ''}`,
       force: 'حاول التشغيل على أي حال',
     },
+    embedError: {
+      title: '⚠️ تعذّر تشغيل الفيديو المضمّن',
+      body: (code: number | null) => {
+        if (code === 100) {
+          return 'الفيديو غير متاح: يبدو أنه حُذف أو أصبح خاصًا على المصدر.';
+        }
+        if (code === 101 || code === 150) {
+          return 'مالك الفيديو يمنع تشغيله مضمّنًا داخل المواقع الأخرى.';
+        }
+        if (code === 2 || code === 5) {
+          return 'حدث خطأ في مشغّل الفيديو المضمّن.';
+        }
+        return `أرسل المصدر رمز خطأ أثناء التشغيل${code != null ? ` (${code})` : ''}.`;
+      },
+      hint: 'جرّب فتح الفيديو على المصدر الأصلي، وسجّلنا الإشعار للإدارة.',
+      retry: 'إعادة محاولة التضمين',
+    },
   },
   courses: {
     metaTitle: 'الكورسات',
@@ -404,6 +421,24 @@ const ar = {
     open: 'افتح',
     allQuizzes: 'كل الاختبارات',
     linkedLesson: 'مرتبط بدرس',
+    toolbar: {
+      searchLabel: 'بحث',
+      searchPlaceholder: 'ابحث بعنوان الاختبار أو وصفه…',
+      levelLabel: 'المستوى',
+      levelAll: 'كل المستويات',
+      statusLabel: 'الحالة',
+      statusAll: 'الكل',
+      statusPassed: 'المجتازة',
+      statusRemaining: 'ما لم تُجتز بعد',
+      apply: 'تطبيق',
+      reset: 'مسح',
+      resultsCount: (shown: number, total: number) => `عرض ${shown} من ${total} اختبارًا`,
+      pageInfo: (page: number, totalPages: number) => `صفحة ${page} من ${totalPages}`,
+      prev: 'السابق',
+      next: 'التالي',
+      noResultsTitle: 'لا نتائج مطابقة',
+      noResultsBody: 'جرّب كلمة بحث أخرى أو غيّر الفلاتر.',
+    },
     runner: {
       progress: (current: number, total: number) => `سؤال ${current} من ${total}`,
       trueLabel: 'صح',
@@ -783,6 +818,23 @@ const en: Dictionary = {
         `The ${provider} API reported that this content may block embedding or is unavailable.${note ? ` (${note})` : ''}`,
       force: 'Try playing anyway',
     },
+    embedError: {
+      title: '⚠️ The embedded video failed to play',
+      body: (code: number | null) => {
+        if (code === 100) {
+          return 'The video is unavailable: it looks like it was deleted or made private on the source.';
+        }
+        if (code === 101 || code === 150) {
+          return 'The video owner does not allow playing it embedded on other sites.';
+        }
+        if (code === 2 || code === 5) {
+          return 'The embedded video player reported an error.';
+        }
+        return `The source sent an error code during playback${code != null ? ` (${code})` : ''}.`;
+      },
+      hint: 'Try opening the video on its original source. We logged the issue for the admins.',
+      retry: 'Retry the embedded player',
+    },
   },
   courses: {
     metaTitle: 'Courses',
@@ -957,6 +1009,24 @@ const en: Dictionary = {
     open: 'Open',
     allQuizzes: 'All quizzes',
     linkedLesson: 'Linked lesson',
+    toolbar: {
+      searchLabel: 'Search',
+      searchPlaceholder: 'Search by quiz title or description…',
+      levelLabel: 'Level',
+      levelAll: 'All levels',
+      statusLabel: 'Status',
+      statusAll: 'All',
+      statusPassed: 'Passed',
+      statusRemaining: 'Not passed yet',
+      apply: 'Apply',
+      reset: 'Clear',
+      resultsCount: (shown: number, total: number) => `Showing ${shown} of ${total} quizzes`,
+      pageInfo: (page: number, totalPages: number) => `Page ${page} of ${totalPages}`,
+      prev: 'Previous',
+      next: 'Next',
+      noResultsTitle: 'No matching quizzes',
+      noResultsBody: 'Try a different search term or clear the filters.',
+    },
     runner: {
       progress: (current: number, total: number) => `Question ${current} of ${total}`,
       trueLabel: 'True',
