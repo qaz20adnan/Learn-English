@@ -865,6 +865,132 @@ export async function countVocabulary(courseId?: string): Promise<number> {
   return row?.c ?? 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Vocabulary library — search, filters & practice deck (Sprint 2)     */
+/* ------------------------------------------------------------------ */
+
+export interface VocabularyListFilters {
+  /** Free-text search across term, translation and example. */
+  q?: string;
+  /** Filter by the CEFR level of the owning course (requires a course). */
+  level?: Level;
+  /** Filter by part of speech, e.g. "noun". */
+  pos?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface VocabularyListPage {
+  items: Vocabulary[];
+  page: number;
+  totalPages: number;
+  total: number;
+}
+
+interface VocabularyFilterSpec {
+  q?: string;
+  level?: Level;
+  pos?: string;
+}
+
+/** Builds the shared WHERE clause for the vocabulary library queries. */
+function vocabularyFilterClauses(spec: VocabularyFilterSpec, params: unknown[]): string {
+  const conds: string[] = [
+    'v.created_by IS NULL',
+    '(v.course_id IS NULL OR c.is_published = 1)',
+  ];
+
+  const q = spec.q?.trim();
+  if (q) {
+    params.push(`%${q.toLowerCase()}%`);
+    conds.push(
+      `(LOWER(v.term) LIKE ? OR LOWER(v.translation) LIKE ? OR LOWER(COALESCE(v.example, '')) LIKE ?)`,
+    );
+    // The same LIKE pattern is reused three times.
+    params.push(params[params.length - 1], params[params.length - 1]);
+  }
+
+  if (spec.level) {
+    params.push(spec.level);
+    conds.push(`c.level = ?`);
+  }
+
+  if (spec.pos) {
+    params.push(spec.pos);
+    conds.push(`v.part_of_speech = ?`);
+  }
+
+  return conds.join('\n   AND ');
+}
+
+const VOCABULARY_LIBRARY_FROM = `
+     FROM vocabulary v
+     LEFT JOIN courses c ON c.id = v.course_id`;
+
+/**
+ * Paged, filterable view of the shared word bank (search + CEFR level +
+ * part of speech). Deterministic alphabetical order so pagination stays
+ * stable across requests.
+ */
+export async function listVocabularyPaged(
+  filters: VocabularyListFilters = {},
+): Promise<VocabularyListPage> {
+  const page = Math.max(1, Math.floor(filters.page ?? 1) || 1);
+  const pageSize = Math.min(100, Math.max(1, Math.floor(filters.pageSize ?? 36) || 36));
+
+  const params: unknown[] = [];
+  const where = vocabularyFilterClauses(filters, params);
+
+  const totalRow = await one<{ c: number }>(
+    `SELECT COUNT(*)::int AS c ${VOCABULARY_LIBRARY_FROM} WHERE ${where}`,
+    ...params,
+  );
+  const total = totalRow?.c ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  params.push(pageSize, (safePage - 1) * pageSize);
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* ${VOCABULARY_LIBRARY_FROM} WHERE ${where}
+     ORDER BY LOWER(v.term) ASC, v.id ASC
+     LIMIT ? OFFSET ?`,
+    ...params,
+  );
+
+  return { items: rows.map(toVocabulary), page: safePage, totalPages, total };
+}
+
+/**
+ * Random sample of the word bank for practice sessions. Accepts the same
+ * filters as the library so learners can practice exactly what they browse.
+ */
+export async function listPracticeWords(
+  filters: VocabularyListFilters = {},
+  limit = 20,
+): Promise<Vocabulary[]> {
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit) || 20));
+  const params: unknown[] = [];
+  const where = vocabularyFilterClauses(filters, params);
+
+  params.push(safeLimit);
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* ${VOCABULARY_LIBRARY_FROM} WHERE ${where}
+     ORDER BY RANDOM() LIMIT ?`,
+    ...params,
+  );
+  return rows.map(toVocabulary);
+}
+
+/** Distinct parts of speech present in the shared bank (for the filter dropdown). */
+export async function listVocabularyPartsOfSpeech(): Promise<string[]> {
+  const rows = await all<{ part_of_speech: string }>(
+    `SELECT DISTINCT v.part_of_speech ${VOCABULARY_LIBRARY_FROM} WHERE v.created_by IS NULL
+     AND (v.course_id IS NULL OR c.is_published = 1)
+     ORDER BY 1 ASC`,
+  );
+  return rows.map((row) => row.part_of_speech);
+}
+
 /** Words created by a single learner ("my saved words"). */
 export async function listUserVocabulary(userId: string): Promise<Vocabulary[]> {
   const rows = await all<VocabularyRow>(

@@ -30,7 +30,10 @@ import {
   listDueCards,
   listFavoriteIds,
   listFavoriteVocabulary,
+  listPracticeWords,
   listUsers,
+  listVocabularyPaged,
+  listVocabularyPartsOfSpeech,
   saveLessonProgress,
   saveQuizAttempt,
   saveReviewState,
@@ -443,5 +446,78 @@ describe('lesson assessments and quiz sessions', () => {
 
     await deleteQuizSession(user.id, first!.id);
     expect(await getQuizSessionForUser(user.id, first!.id)).toBeNull();
+  });
+});
+
+describe('vocabulary library — search, filters & practice (Sprint 2)', () => {
+  it('searches, filters, paginates and samples the shared word bank', async () => {
+    const a1Course = newId('crs');
+    const b1Unpublished = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'A1 Vocab Course', 'd', 'a1', 'General', '📘', 'brand', 1, 1, ?, ?)`,
+      a1Course,
+      `a1-${a1Course}`,
+      nowIso(),
+      nowIso(),
+    );
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'B1 Draft Course', 'd', 'b1', 'General', '📘', 'brand', 0, 2, ?, ?)`,
+      b1Unpublished,
+      `b1-${b1Unpublished}`,
+      nowIso(),
+      nowIso(),
+    );
+
+    await createVocabulary({ courseId: a1Course, term: 'library-apple', translation: 'تفاحة', partOfSpeech: 'noun', example: 'I eat an apple.' });
+    await createVocabulary({ courseId: a1Course, term: 'library-arrive', translation: 'يصل متأخراً', partOfSpeech: 'verb' });
+    await createVocabulary({ courseId: b1Unpublished, term: 'library-zebra', translation: 'حصان وحشي' });
+    await createVocabulary({ term: 'library-banana', translation: 'موز أصفر', partOfSpeech: 'noun' });
+
+    // Plain listing: shared bank only (published courses + unowned words).
+    const all = await listVocabularyPaged({ pageSize: 100 });
+    const allTerms = all.items.map((word) => word.term);
+    expect(allTerms).toContain('library-apple');
+    expect(allTerms).toContain('library-banana');
+    expect(allTerms).not.toContain('library-zebra'); // draft course stays hidden
+
+    // Deterministic alphabetical order.
+    const sorted = [...allTerms].sort((a, b) => a.localeCompare(b));
+    expect(allTerms).toEqual(sorted);
+
+    // Free-text search across term, translation and example.
+    expect((await listVocabularyPaged({ q: 'LIBRARY-APPLE' })).items.map((w) => w.term)).toEqual(['library-apple']);
+    expect((await listVocabularyPaged({ q: 'يصل متأخراً' })).items.map((w) => w.term)).toEqual(['library-arrive']);
+    expect((await listVocabularyPaged({ q: 'eat an apple' })).items.map((w) => w.term)).toEqual(['library-apple']);
+
+    // Level filter follows the owning course.
+    const a1Words = await listVocabularyPaged({ level: 'a1', pageSize: 100 });
+    expect(a1Words.items.map((w) => w.term).sort()).toEqual(['library-apple', 'library-arrive']);
+
+    // Part-of-speech filter.
+    expect((await listVocabularyPaged({ pos: 'verb', pageSize: 100 })).items.map((w) => w.term))
+      .toContain('library-arrive');
+
+    // Pagination.
+    const page1 = await listVocabularyPaged({ q: 'library-', pageSize: 2, page: 1 });
+    expect(page1.items).toHaveLength(2);
+    expect(page1.total).toBeGreaterThanOrEqual(3);
+    expect(page1.totalPages).toBeGreaterThanOrEqual(2);
+    const page2 = await listVocabularyPaged({ q: 'library-', pageSize: 2, page: 2 });
+    expect(page2.items).toHaveLength(1);
+    expect(page1.items.map((w) => w.id)).not.toEqual(page2.items.map((w) => w.id));
+
+    // Practice sampler respects the same filters and the limit.
+    const practice = await listPracticeWords({ level: 'a1' }, 1);
+    expect(practice).toHaveLength(1);
+    expect(['library-apple', 'library-arrive']).toContain(practice[0]!.term);
+    const practiceAll = await listPracticeWords({ level: 'a1' }, 10);
+    expect(practiceAll.length).toBe(2);
+
+    // Distinct parts of speech for the filter dropdown.
+    const parts = await listVocabularyPartsOfSpeech();
+    expect(parts).toContain('noun');
+    expect(parts).toContain('verb');
   });
 });
