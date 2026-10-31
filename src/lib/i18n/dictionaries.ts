@@ -551,6 +551,15 @@ const ar = {
       'كورسات، فيديو وصوت، مفردات بمراجعة ذكية، قصص واختبارات، وتتبع دقيق للتقدم — كل ذلك في مكان واحد.',
     ctaRegister: 'أنشئ حسابك المجاني',
     ctaLogin: 'لدي حساب',
+    statsTitle: 'مكتبة حقيقية بأرقام من المنصة نفسها',
+    statsSubtitle: 'تُقرأ هذه الأرقام مباشرة من قاعدة بيانات المنصة عند فتح الصفحة — لا إحصاءات تسويقية.',
+    statCourses: 'كورس',
+    statLessons: 'درس',
+    statQuizzes: 'اختبار',
+    statStories: 'قصة',
+    statVocab: 'مفردة',
+    levelsTitle: 'ستة مستويات وفق السلم الأوروبي CEFR',
+    levelsHint: 'من التأسيس إلى C1. محتوى المستوى A2 قيد الإثراء حالياً ويُضاف تدريجياً.',
     footer:
       'Fluently | فلوينتلي — بُني بـ Next.js وPostgreSQL. جميع الروابط الخارجية تُفحص عبر واجهاتها الرسمية.',
     features: [
@@ -1139,6 +1148,15 @@ const en: Dictionary = {
       'Courses, video and audio, vocabulary with smart review, stories and quizzes, and accurate progress tracking — all in one place.',
     ctaRegister: 'Create your free account',
     ctaLogin: 'I have an account',
+    statsTitle: 'A real library, with numbers straight from the platform',
+    statsSubtitle: 'These figures are read live from the platform database on every page load — no marketing claims.',
+    statCourses: 'Courses',
+    statLessons: 'Lessons',
+    statQuizzes: 'Quizzes',
+    statStories: 'Stories',
+    statVocab: 'Vocabulary',
+    levelsTitle: 'Six levels aligned with CEFR',
+    levelsHint: 'From Foundation to C1. A2 content is being enriched and added gradually.',
     footer:
       'Fluently — built with Next.js and PostgreSQL. All external links are checked through their official APIs.',
     features: [
