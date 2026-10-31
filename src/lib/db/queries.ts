@@ -529,6 +529,87 @@ export async function updateMediaVerification(
 }
 
 /* ------------------------------------------------------------------ */
+/* Playback failures (T10)                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Records a runtime playback failure reported by an in-page player.
+ *
+ * Returns `false` when the exact same failure (user + media + code) was
+ * already recorded in the last 10 minutes — page refreshes and player
+ * remounts would otherwise flood the reliability board. The media row must
+ * exist (FK enforced); the API resolves this before calling.
+ */
+export async function recordPlaybackFailure(input: {
+  userId: string;
+  mediaId: string;
+  provider: MediaProvider;
+  errorCode: number | null;
+  note?: string;
+}): Promise<boolean> {
+  const dedupeWindow = 10 * 60 * 1000;
+  const since = new Date(Date.now() - dedupeWindow).toISOString();
+
+  const existing = await one<{ c: number }>(
+    `SELECT COUNT(*)::int AS c FROM playback_failures
+     WHERE user_id = ? AND media_id = ? AND COALESCE(error_code, -1) = COALESCE(?, -1)
+       AND created_at >= ?`,
+    input.userId,
+    input.mediaId,
+    input.errorCode,
+    since,
+  );
+  if ((existing?.c ?? 0) > 0) return false;
+
+  await run(
+    `INSERT INTO playback_failures (id, user_id, media_id, provider, error_code, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    newId('pbf'),
+    input.userId,
+    input.mediaId,
+    input.provider,
+    input.errorCode,
+    input.note ?? '',
+    nowIso(),
+  );
+  return true;
+}
+
+/**
+ * Aggregated playback failures for the admin reliability board: how many
+ * distinct failures per media in the given window (ISO timestamp).
+ */
+export async function listRecentPlaybackFailures(sinceIso: string) {
+  const rows = await all<{
+    media_id: string;
+    provider: MediaProvider;
+    title: string | null;
+    url: string | null;
+    external_id: string | null;
+    failure_count: number;
+    last_failure_at: string;
+    last_error_code: number | null;
+  }>(
+    `SELECT f.media_id,
+            m.provider,
+            m.title,
+            m.url,
+            m.external_id,
+            COUNT(*)::int AS failure_count,
+            MAX(f.created_at) AS last_failure_at,
+            (ARRAY_AGG(f.error_code ORDER BY f.created_at DESC))[1] AS last_error_code
+     FROM playback_failures f
+     JOIN media m ON m.id = f.media_id
+     WHERE f.created_at >= ?
+     GROUP BY f.media_id, m.provider, m.title, m.url, m.external_id
+     ORDER BY failure_count DESC, last_failure_at DESC
+     LIMIT 100`,
+    sinceIso,
+  );
+  return rows;
+}
+
+/* ------------------------------------------------------------------ */
 /* Courses & lessons                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1128,6 +1209,125 @@ export async function listQuizzes(): Promise<Quiz[]> {
      ORDER BY q.position ASC, q.title ASC`,
   );
   return rows.map(toQuiz);
+}
+
+/* ------------------------------------------------------------------ */
+/* Quizzes library: search / filters / pagination (T3)                 */
+/* ------------------------------------------------------------------ */
+
+export type QuizStatusFilter = 'all' | 'passed' | 'remaining';
+
+export interface QuizListFilters {
+  /** Free-text search across title, Arabic title and description. */
+  q?: string;
+  /** Exact CEFR level (foundation/a1/a2/b1/b2/c1). */
+  level?: string;
+  /**
+   * `passed` → best attempt ratio ≥ pass threshold.
+   * `remaining` → never attempted, or attempted below the threshold.
+   */
+  status?: QuizStatusFilter;
+  page: number;
+  pageSize: number;
+}
+
+export interface QuizListPage {
+  items: Quiz[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+interface QuizPageRow extends QuizRow {
+  best_ratio: number | null;
+}
+
+function quizSearchClause(q: string): string {
+  const like = `%${q.toLowerCase().replace(/[%_\\]/g, (m) => `\\${m}`)}%`;
+  return like;
+}
+
+/**
+ * Paginated, filterable quiz library listing.
+ *
+ * The learner's best attempt ratio (max of score/max across attempts) is joined
+ * per quiz so the `passed` / `remaining` filters reflect *this* user's real
+ * progress — same definition the dashboard and quiz pages use.
+ *
+ * Placeholders are written as explicit `$n` on purpose: the same parameter is
+ * referenced several times ($1 user id in both aggregates, $2 search term in
+ * three columns), and the `?`-to-`$n` shim in db/client.ts numbers purely by
+ * occurrence, which cannot express reuse.
+ */
+export async function listQuizzesPaged(
+  userId: string,
+  filters: QuizListFilters,
+): Promise<QuizListPage> {
+  const page = Math.max(1, Math.floor(filters.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Math.floor(filters.pageSize) || 24));
+
+  const params: unknown[] = [userId];
+  const conds: string[] = [
+    'q.is_published = 1',
+    `(q.course_id IS NULL OR EXISTS (
+       SELECT 1 FROM courses c WHERE c.id = q.course_id AND c.is_published = 1
+     ))`,
+  ];
+
+  const q = filters.q?.trim();
+  if (q) {
+    params.push(quizSearchClause(q));
+    conds.push(
+      "(LOWER(q.title) LIKE $2 OR LOWER(COALESCE(q.title_ar, '')) LIKE $2 OR LOWER(q.description) LIKE $2)",
+    );
+  }
+
+  if (filters.level) {
+    params.push(filters.level);
+    conds.push(`q.level = $${params.length}`);
+  }
+
+  const status = filters.status ?? 'all';
+  if (status === 'passed') {
+    conds.push('(ba.best_ratio IS NOT NULL AND ba.best_ratio * 100 >= q.pass_percent)');
+  } else if (status === 'remaining') {
+    conds.push('(ba.best_ratio IS NULL OR ba.best_ratio * 100 < q.pass_percent)');
+  }
+
+  const where = conds.join('\n   AND ');
+  const joins = `LEFT JOIN (
+       SELECT quiz_id, MAX(score_points * 1.0 / NULLIF(max_points, 0)) AS best_ratio
+       FROM quiz_attempts WHERE user_id = $1
+       GROUP BY quiz_id
+     ) ba ON ba.quiz_id = q.id`;
+
+  const totalRow = await one<{ c: number }>(
+    `SELECT COUNT(*)::int AS c
+     FROM quizzes q
+     ${joins}
+     WHERE ${where}`,
+    ...params,
+  );
+  const total = totalRow?.c ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  params.push(pageSize, (safePage - 1) * pageSize);
+  const limitN = params.length - 1;
+  const offsetN = params.length;
+
+  const rows = await all<QuizPageRow>(
+    `SELECT q.*, ${QUIZ_COUNT_COLUMNS}, ba.best_ratio
+     FROM quizzes q
+     ${joins}
+     WHERE ${where}
+     ORDER BY q.position ASC, q.title ASC
+     LIMIT $${limitN} OFFSET $${offsetN}`,
+    ...params,
+  );
+
+  return { items: rows.map(toQuiz), total, page: safePage, pageSize, totalPages };
 }
 
 export async function getQuizBySlug(slug: string): Promise<Quiz | null> {
