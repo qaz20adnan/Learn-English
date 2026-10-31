@@ -10,7 +10,6 @@ import {
 import { Card, LevelBadge, ProgressBar, SectionTitle, StatCard } from '@/components/ui';
 import { PointsOverview } from '@/components/points/PointsOverview';
 import { MotivationalBanner } from '@/components/dashboard/MotivationalBanner';
-import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 
 export const metadata: Metadata = { title: 'لوحة التعلّم' };
@@ -170,8 +169,6 @@ export default async function DashboardPage() {
           </div>
         </section>
       ) : null}
-
-      <DeveloperCredit variant="card" />
     </div>
   );
 }

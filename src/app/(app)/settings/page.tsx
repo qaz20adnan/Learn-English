@@ -3,7 +3,6 @@ import { requireUser } from '@/lib/auth/dal';
 import { getSettings } from '@/lib/db/queries';
 import { SettingsForm } from '@/components/settings/SettingsForm';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
-import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { LanguageToggle } from '@/components/i18n/LanguageToggle';
 import { Card, SectionTitle } from '@/components/ui';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
@@ -58,8 +57,6 @@ export default async function SettingsPage() {
               </div>
             </dl>
           </Card>
-
-          <DeveloperCredit variant="card" />
         </div>
       </div>
     </div>
