@@ -14,16 +14,18 @@ import type { PlayerProps } from './types';
  * Progress is tracked with the iframe messaging protocol (`enablejsapi=1`) on a
  * best-effort basis — if the messages never arrive, the video still plays.
  */
-export function YouTubePlayer({ media, startSeconds, onProgress, onEnded }: PlayerProps) {
+export function YouTubePlayer({ media, startSeconds, onProgress, onEnded, onEmbedError }: PlayerProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const progressRef = useRef(onProgress);
   const endedRef = useRef(onEnded);
   const startRef = useRef(startSeconds);
+  const embedErrorRef = useRef(onEmbedError);
 
   useEffect(() => {
     progressRef.current = onProgress;
     endedRef.current = onEnded;
-  }, [onProgress, onEnded]);
+    embedErrorRef.current = onEmbedError;
+  }, [onProgress, onEnded, onEmbedError]);
 
   const embedUrl =
     media.embedUrl ??
@@ -82,6 +84,13 @@ export function YouTubePlayer({ media, startSeconds, onProgress, onEnded }: Play
         ) {
           progressRef.current(info.currentTime, info.duration);
         }
+        return;
+      }
+
+      if (data.event === 'onError') {
+        // JSAPI error codes: 2 invalid param, 5 HTML5 error, 100 not found
+        // (removed/private), 101/150 embedding disabled by the owner.
+        embedErrorRef.current?.(typeof data.info === 'number' ? data.info : null);
         return;
       }
 
