@@ -80,7 +80,8 @@ export default async function StoryPage(props: PageProps<'/stories/[slug]'>) {
 
       <section className="flex flex-col gap-4">
         <SectionTitle title={dict.stories.quizTitle} description={dict.stories.quizDescription} />
-        <StoryQuiz storyId={story.id} questions={quiz} bestScore={best} />
+        {/* عقد الـ API: getStoryBySlug(parsed.data.storyId) — يجب إرسال الـ slug لا المعرف الداخلي */}
+        <StoryQuiz storyId={story.slug} questions={quiz} bestScore={best} />
       </section>
 
       {nextStory ? (
