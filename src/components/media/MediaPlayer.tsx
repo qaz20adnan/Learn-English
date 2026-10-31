@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { YouTubePlayer } from './YouTubePlayer';
 import { VimeoPlayer } from './VimeoPlayer';
 import { Html5Player } from './Html5Player';
@@ -39,6 +39,49 @@ function Notice({
 export function MediaPlayer({ media, startSeconds, onProgress, onEnded }: Props) {
   const { dict } = useI18n();
   const [forceLoad, setForceLoad] = useState(false);
+  // Runtime embed failure reported by the player (YouTube JSAPI onError).
+  const [embedErrorCode, setEmbedErrorCode] = useState<number | null>(null);
+  const [playerEpoch, setPlayerEpoch] = useState(0);
+  // Key of the last failure already reported to /api/media/failures — dedupes
+  // client-side per media+code (the endpoint dedupes again server-side).
+  const [reportedKey, setReportedKey] = useState('');
+
+  // Reset the runtime error when a different media item is opened. Done during
+  // render (the React-recommended "adjust state when a prop changes" pattern):
+  // the player is keyed by media id + epoch, so remounting is guaranteed.
+  const mediaId = media?.id ?? null;
+  const [prevMediaId, setPrevMediaId] = useState<string | null>(mediaId);
+  if (mediaId !== prevMediaId) {
+    setPrevMediaId(mediaId);
+    setEmbedErrorCode(null);
+    setForceLoad(false);
+    setReportedKey('');
+    setPlayerEpoch((epoch) => epoch + 1);
+  }
+
+  const handleEmbedError = useCallback(
+    (code: number | null) => {
+      setEmbedErrorCode(code);
+
+      // Best-effort report for the admin reliability board. Fire-and-forget:
+      // a failure here must never disturb the learner. Deduped client-side per
+      // media+code and server-side with a 10-minute window.
+      if (!media) return;
+      const reportKey = `${media.id}:${code ?? 'x'}`;
+      if (reportedKey === reportKey) return;
+      setReportedKey(reportKey);
+      void fetch('/api/media/failures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mediaId: media.id,
+          provider: media.provider,
+          errorCode: code,
+        }),
+      }).catch(() => undefined);
+    },
+    [media, reportedKey],
+  );
 
   if (!media) {
     return (
@@ -70,7 +113,7 @@ export function MediaPlayer({ media, startSeconds, onProgress, onEnded }: Props)
     );
   }
 
-  if (media.verificationStatus === 'UNAVAILABLE' && !forceLoad) {
+  if (media.verificationStatus === 'UNAVAILABLE' && !forceLoad && embedErrorCode === null) {
     return (
       <Notice tone="warning" title={dict.media.unavailable.title}>
         <p>
@@ -93,6 +136,29 @@ export function MediaPlayer({ media, startSeconds, onProgress, onEnded }: Props)
     );
   }
 
+  if (embedErrorCode !== null) {
+    return (
+      <Notice tone="warning" title={dict.media.embedError.title}>
+        <p>{dict.media.embedError.body(embedErrorCode)}</p>
+        <p className="mt-1">{dict.media.embedError.hint}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {watchLink}
+          <button
+            type="button"
+            onClick={() => {
+              setReportedKey('');
+              setEmbedErrorCode(null);
+              setPlayerEpoch((epoch) => epoch + 1);
+            }}
+            className="rounded-lg border border-current px-3 py-1.5 text-xs font-bold"
+          >
+            {dict.media.embedError.retry}
+          </button>
+        </div>
+      </Notice>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -108,13 +174,16 @@ export function MediaPlayer({ media, startSeconds, onProgress, onEnded }: Props)
 
       {media.provider === 'YOUTUBE' ? (
         <YouTubePlayer
+          key={`yt-${media.id}-${playerEpoch}`}
           media={media}
           startSeconds={startSeconds}
           onProgress={onProgress}
           onEnded={onEnded}
+          onEmbedError={handleEmbedError}
         />
       ) : media.provider === 'VIMEO' ? (
         <VimeoPlayer
+          key={`vm-${media.id}-${playerEpoch}`}
           media={media}
           startSeconds={startSeconds}
           onProgress={onProgress}
@@ -122,6 +191,7 @@ export function MediaPlayer({ media, startSeconds, onProgress, onEnded }: Props)
         />
       ) : (
         <Html5Player
+          key={`html-${media.id}-${playerEpoch}`}
           media={media}
           startSeconds={startSeconds}
           onProgress={onProgress}

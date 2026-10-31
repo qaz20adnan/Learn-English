@@ -44,6 +44,13 @@ export const storyAttemptSchema = z.object({
   answers: z.array(z.number().int().min(0).max(20)).max(50),
 });
 
+export const mediaFailureSchema = z.object({
+  mediaId: z.string().min(1).max(64),
+  provider: z.enum(['YOUTUBE', 'VIMEO', 'AUDIO_FILE', 'VIDEO_FILE', 'NONE']),
+  errorCode: z.number().int().min(0).max(9999).nullable(),
+  note: z.string().trim().max(300).optional(),
+});
+
 export const favoriteSchema = z.object({
   vocabId: z.string().min(1),
   favorite: z.boolean(),

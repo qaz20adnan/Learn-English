@@ -17,4 +17,10 @@ export interface PlayerProps {
   startSeconds: number;
   onProgress: (positionSeconds: number, durationSeconds: number) => void;
   onEnded: () => void;
+  /**
+   * Provider-reported embed error (YouTube JSAPI `onError`: 2, 5, 100, 101,
+   * 150). Optional; currently emitted by YouTubePlayer so MediaPlayer can show
+   * a fallback UI with the original source link and report the failure.
+   */
+  onEmbedError?: (errorCode: number | null) => void;
 }

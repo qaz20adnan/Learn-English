@@ -287,4 +287,23 @@ CREATE TABLE IF NOT EXISTS quiz_sessions (
 CREATE INDEX IF NOT EXISTS idx_quiz_sessions_user
   ON quiz_sessions(user_id, quiz_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_quiz_sessions_expires ON quiz_sessions(expires_at);
+
+-- Runtime media playback failures reported by the in-page players (T10).
+-- Complements the periodic oEmbed verification: a video that passes the check
+-- today can still be deleted, made private or embedding-blocked when a learner
+-- actually tries to watch it. user_id is nullable (ON DELETE SET NULL) so the
+-- admin reliability board keeps the signal even after the account is removed.
+CREATE TABLE IF NOT EXISTS playback_failures (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  media_id   TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  provider   TEXT NOT NULL CHECK (provider IN ('YOUTUBE', 'VIMEO', 'AUDIO_FILE', 'VIDEO_FILE', 'NONE')),
+  error_code INTEGER,
+  note       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_playback_failures_media
+  ON playback_failures(media_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_playback_failures_recent
+  ON playback_failures(created_at);
 `;
