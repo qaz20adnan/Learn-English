@@ -1,4 +1,5 @@
 import type { Level, VerificationStatus } from '../types';
+import type { RoadmapStatus } from '../roadmap';
 
 /**
  * UI dictionaries. `ar` is the source of truth: the `Dictionary` type is derived
@@ -39,6 +40,7 @@ const ar = {
   nav: {
     aria: 'التنقل الرئيسي',
     dashboard: 'الرئيسية',
+    roadmap: 'خارطتي',
     courses: 'الكورسات',
     quizzes: 'الاختبارات',
     stories: 'القصص',
@@ -49,6 +51,7 @@ const ar = {
   },
   navHints: {
     dashboard: 'نظرة سريعة على تقدمك ومهام اليوم',
+    roadmap: 'مسارك من A1 إلى C1 حسب إنجازك الفعلي',
     courses: 'تصفّح المسارات التعليمية المرتبة',
     quizzes: 'اختبر مستواك وتحدّى نفسك',
     stories: 'اقرأ قصصًا مبسّطة واختبر فهمك',
@@ -445,6 +448,36 @@ const ar = {
     ofLessons: (done: number, total: number) => `${done} من ${total} دروس`,
     open: 'افتح',
   },
+  roadmap: {
+    metaTitle: 'خارطة التعلم',
+    title: 'خارطة التعلم',
+    description: 'مسارك من A1 إلى C1 — يُحدَّث تلقائيًا من إنجازك الفعلي في الدروس.',
+    heroCurrent: 'مستواك الحالي',
+    heroOverall: (percent: number) => `أكملت ${percent}% من محتوى المسار`,
+    heroAllDone: 'أنجزت كل محتوى المسار المتاح — عمل مذهل! 🎉',
+    nextTitle: 'خطوتك التالية',
+    fromCourse: 'من كورس',
+    continue: 'متابعة المسار',
+    continueHere: 'متابعة هذه المرحلة',
+    browse: 'استعرض الكورسات',
+    youAreHere: 'أنت هنا',
+    pathTitle: 'المسار الكامل',
+    status: {
+      completed: 'مكتمل',
+      in_progress: 'قيد التقدم',
+      upcoming: 'لم يبدأ بعد',
+      empty: 'قريبًا',
+    } satisfies Record<RoadmapStatus, string>,
+    chips: {
+      courses: (n: number) => `📘 ${n} كورسات`,
+      lessons: (n: number) => `🎓 ${n} دروس`,
+      stories: (n: number) => `📖 ${n} قصص`,
+      quizzes: (n: number) => `📝 ${n} اختبارات`,
+    },
+    emptyPlatform: 'لا يوجد محتوى منشور بعد — عد قريبًا.',
+    emptyPlatformHint:
+      'ستظهر مراحل المسار تلقائيًا بمجرد نشر الكورسات والقصص والاختبارات.',
+  },
   quizzes: {
     metaTitle: 'الاختبارات',
     title: 'الاختبارات والتمارين',
@@ -672,6 +705,7 @@ const en: Dictionary = {
   nav: {
     aria: 'Main navigation',
     dashboard: 'Home',
+    roadmap: 'My path',
     courses: 'Courses',
     quizzes: 'Quizzes',
     stories: 'Stories',
@@ -682,6 +716,7 @@ const en: Dictionary = {
   },
   navHints: {
     dashboard: 'A quick view of your progress and today’s tasks',
+    roadmap: 'Your A1→C1 journey based on your real progress',
     courses: 'Browse the ordered learning paths',
     quizzes: 'Test your level and challenge yourself',
     stories: 'Read simplified stories and check your understanding',
@@ -1082,6 +1117,36 @@ const en: Dictionary = {
     byCourse: 'Progress by course',
     ofLessons: (done: number, total: number) => `${done} of ${total} lessons`,
     open: 'Open',
+  },
+  roadmap: {
+    metaTitle: 'Learning roadmap',
+    title: 'Learning roadmap',
+    description: 'Your path from A1 to C1 — updated automatically from your real lesson progress.',
+    heroCurrent: 'Your current level',
+    heroOverall: (percent: number) => `You completed ${percent}% of the path content`,
+    heroAllDone: 'You finished every available step on the path — amazing work! 🎉',
+    nextTitle: 'Your next step',
+    fromCourse: 'from course',
+    continue: 'Continue the path',
+    continueHere: 'Continue this step',
+    browse: 'Browse courses',
+    youAreHere: 'You are here',
+    pathTitle: 'The full path',
+    status: {
+      completed: 'Completed',
+      in_progress: 'In progress',
+      upcoming: 'Not started yet',
+      empty: 'Coming soon',
+    } satisfies Record<RoadmapStatus, string>,
+    chips: {
+      courses: (n: number) => `📘 ${n} courses`,
+      lessons: (n: number) => `🎓 ${n} lessons`,
+      stories: (n: number) => `📖 ${n} stories`,
+      quizzes: (n: number) => `📝 ${n} quizzes`,
+    },
+    emptyPlatform: 'No published content yet — check back soon.',
+    emptyPlatformHint:
+      'Path stages will appear automatically once courses, stories and quizzes are published.',
   },
   quizzes: {
     metaTitle: 'Quizzes',
