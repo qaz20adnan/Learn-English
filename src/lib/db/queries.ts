@@ -1,6 +1,7 @@
 import { all, newId, nowIso, one, run } from './client';
 import { computeStreak, levelForPoints } from '../points';
 import { DEFAULT_QUIZ_PASS_PERCENT } from '../progression';
+import { foldToStep, type RoadmapStep } from '../roadmap';
 import type {
   Course,
   CourseProgressSummary,
@@ -823,6 +824,133 @@ export async function getLearningStats(userId: string): Promise<LearningStats> {
     vocabularyTracked: vocab?.c ?? 0,
     reviewsDue: due?.c ?? 0,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Learning roadmap                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface RoadmapStepCounts {
+  level: Level;
+  totalLessons: number;
+  doneLessons: number;
+  courses: number;
+  stories: number;
+  quizzes: number;
+}
+
+export interface RoadmapNextLesson {
+  step: RoadmapStep;
+  courseSlug: string;
+  courseTitle: string;
+  courseTitleAr: string | null;
+  courseEmoji: string;
+  lessonSlug: string;
+  lessonTitle: string;
+  lessonTitleAr: string | null;
+}
+
+export interface RoadmapData {
+  /** One row per stored level that has any published content. */
+  steps: RoadmapStepCounts[];
+  /** First lesson the learner has not completed, following the path order. */
+  nextLesson: RoadmapNextLesson | null;
+}
+
+const LEVEL_ORDER: Record<Level, number> = {
+  foundation: 0,
+  a1: 1,
+  a2: 2,
+  b1: 3,
+  b2: 4,
+  c1: 5,
+};
+
+/** Stored levels folded onto the visible CEFR steps, in path order. */
+const STEP_CASE_SQL =
+  "CASE c.level WHEN 'foundation' THEN 0 WHEN 'a1' THEN 0 WHEN 'a2' THEN 1 WHEN 'b1' THEN 2 WHEN 'b2' THEN 3 ELSE 4 END";
+
+export async function getRoadmapData(userId: string): Promise<RoadmapData> {
+  const [lessonRows, courseRows, storyRows, quizRows, nextRows] = await Promise.all([
+    all<{ level: Level; total: number; done: number }>(
+      `SELECT c.level AS level,
+              COUNT(l.id)::int AS total,
+              COUNT(CASE WHEN p.status = 'COMPLETED' THEN 1 END)::int AS done
+         FROM courses c
+         JOIN lessons l ON l.course_id = c.id
+         LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.user_id = ?
+        WHERE c.is_published = 1
+        GROUP BY c.level`,
+      userId,
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM courses WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM stories WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM quizzes WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{
+      level: Level;
+      course_slug: string;
+      course_title: string;
+      course_title_ar: string | null;
+      course_emoji: string;
+      lesson_slug: string;
+      lesson_title: string;
+      lesson_title_ar: string | null;
+    }>(
+      `SELECT c.level AS level, c.slug AS course_slug, c.title AS course_title,
+              c.title_ar AS course_title_ar, c.cover_emoji AS course_emoji,
+              l.slug AS lesson_slug, l.title AS lesson_title,
+              l.title_ar AS lesson_title_ar
+         FROM courses c
+         JOIN lessons l ON l.course_id = c.id
+         LEFT JOIN lesson_progress p
+                ON p.lesson_id = l.id AND p.user_id = ? AND p.status = 'COMPLETED'
+        WHERE c.is_published = 1 AND p.id IS NULL
+        ORDER BY ${STEP_CASE_SQL}, c.position, l.position
+        LIMIT 1`,
+      userId,
+    ),
+  ]);
+
+  // Every stored level that owns any published content — even a course
+  // without lessons still counts towards the step chips.
+  const levels = new Set<Level>([
+    ...courseRows.map((row) => row.level),
+    ...lessonRows.map((row) => row.level),
+  ]);
+  const steps: RoadmapStepCounts[] = [...levels].map((level) => {
+    const lessonRow = lessonRows.find((row) => row.level === level);
+    return {
+      level,
+      totalLessons: lessonRow?.total ?? 0,
+      doneLessons: lessonRow?.done ?? 0,
+      courses: courseRows.find((row) => row.level === level)?.c ?? 0,
+      stories: storyRows.find((row) => row.level === level)?.c ?? 0,
+      quizzes: quizRows.find((row) => row.level === level)?.c ?? 0,
+    };
+  });
+  steps.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+
+  const next = nextRows[0];
+  const nextLesson: RoadmapNextLesson | null = next
+    ? {
+        step: foldToStep(next.level),
+        courseSlug: next.course_slug,
+        courseTitle: next.course_title,
+        courseTitleAr: next.course_title_ar,
+        courseEmoji: next.course_emoji,
+        lessonSlug: next.lesson_slug,
+        lessonTitle: next.lesson_title,
+        lessonTitleAr: next.lesson_title_ar,
+      }
+    : null;
+
+  return { steps, nextLesson };
 }
 
 /* ------------------------------------------------------------------ */

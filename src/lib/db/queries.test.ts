@@ -23,6 +23,7 @@ import {
   getQuizSessionForUser,
   listCourseAssessments,
   getPointsTotal,
+  getRoadmapData,
   getReviewCard,
   getSettings,
   getVocabularyForUser,
@@ -519,5 +520,113 @@ describe('vocabulary library — search, filters & practice (Sprint 2)', () => {
     const parts = await listVocabularyPartsOfSpeech();
     expect(parts).toContain('noun');
     expect(parts).toContain('verb');
+  });
+});
+
+describe('learning roadmap (Sprint 3)', () => {
+  async function seedRoadmapCourse(level: string, position: number, lessonCount: number) {
+    const courseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Roadmap Course', 'd', ?, 'General', '📘', 'brand', 1, ?, ?, ?)`,
+      courseId,
+      `rm-${courseId}`,
+      level,
+      position,
+      nowIso(),
+      nowIso(),
+    );
+    const lessonIds: string[] = [];
+    const lessonSlugs: string[] = [];
+    for (let i = 0; i < lessonCount; i += 1) {
+      const lessonId = newId('les');
+      const slug = `rm-${lessonId}-${i}`;
+      await run(
+        `INSERT INTO lessons (id, course_id, slug, title, summary, content, transcript, duration_minutes, position, created_at, updated_at)
+         VALUES (?, ?, ?, 'Roadmap Lesson', 's', 'b', 't', 5, ?, ?, ?)`,
+        lessonId,
+        courseId,
+        slug,
+        i + 1,
+        nowIso(),
+        nowIso(),
+      );
+      lessonIds.push(lessonId);
+      lessonSlugs.push(slug);
+    }
+    return { courseId, lessonIds, lessonSlugs };
+  }
+
+  async function seedUser() {
+    return createUser({
+      email: `rm-${newId('u')}@test.dev`,
+      name: 'Roadmap Learner',
+      passwordHash: 'hash',
+    });
+  }
+
+  it('points a fresh learner at the first path lesson and folds foundation into A1', async () => {
+    const user = await seedUser();
+    const foundation = await seedRoadmapCourse('foundation', 0, 1);
+    const data = await getRoadmapData(user.id);
+    expect(data.nextLesson).not.toBeNull();
+    expect(data.nextLesson?.lessonSlug).toBe(foundation.lessonSlugs[0]);
+    expect(data.nextLesson?.step).toBe('a1');
+    expect(data.nextLesson?.courseSlug).toBe(`rm-${foundation.courseId}`);
+  });
+
+  it('advances to the next uncompleted lesson once the first is completed', async () => {
+    const user = await seedUser();
+    const foundation = await seedRoadmapCourse('foundation', 0, 1);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: foundation.lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+    const data = await getRoadmapData(user.id);
+    expect(data.nextLesson).not.toBeNull();
+    expect(data.nextLesson?.lessonSlug).not.toBe(foundation.lessonSlugs[0]);
+    // Untouched published A1 lessons are the next thing on the path.
+    expect(data.nextLesson?.step).toBe('a1');
+  });
+
+  it('aggregates per-level course, lesson and completion counts', async () => {
+    const user = await seedUser();
+    const a2 = await seedRoadmapCourse('a2', 0, 2);
+    const before = await getRoadmapData(user.id);
+    const a2Before = before.steps.find((step) => step.level === 'a2');
+    expect(a2Before?.courses).toBe(1);
+    expect(a2Before?.totalLessons).toBe(2);
+    expect(a2Before?.doneLessons).toBe(0);
+
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: a2.lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+    const after = await getRoadmapData(user.id);
+    const a2After = after.steps.find((step) => step.level === 'a2');
+    expect(a2After?.doneLessons).toBe(1);
+    expect(a2After?.totalLessons).toBe(2);
+  });
+
+  it('excludes unpublished courses from every aggregate', async () => {
+    const user = await seedUser();
+    const courseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Draft', 'd', 'b1', 'General', '📘', 'brand', 0, 0, ?, ?)`,
+      courseId,
+      `rm-draft-${courseId}`,
+      nowIso(),
+      nowIso(),
+    );
+    const data = await getRoadmapData(user.id);
+    // No published B1 content exists: the level must not appear at all.
+    expect(data.steps.find((step) => step.level === 'b1')).toBeUndefined();
   });
 });
