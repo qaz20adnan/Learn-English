@@ -6,6 +6,7 @@ import { LocaleProvider } from '@/components/i18n/LocaleProvider';
 import { BrandLogo } from '@/components/layout/BrandLogo';
 import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
+import { getPublicCounts, type PublicCounts } from '@/lib/db/queries';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { dict } = await getLocaleAndDictionary();
@@ -31,6 +32,15 @@ function LandingFallback() {
 
 async function Landing() {
   const { locale, dict } = await getLocaleAndDictionary();
+
+  // Real counts from the DB. If the DB is unreachable (e.g. preview builds),
+  // the stats section is simply hidden — we never show invented numbers.
+  let counts: PublicCounts | null = null;
+  try {
+    counts = await getPublicCounts();
+  } catch {
+    counts = null;
+  }
 
   return (
     <LocaleProvider locale={locale}>
@@ -107,6 +117,47 @@ async function Landing() {
               {dict.landing.ctaLogin}
             </Link>
           </div>
+        </section>
+
+        {counts ? (
+          <section aria-labelledby="stats-title" className="relative mx-auto w-full max-w-6xl px-4 pb-4 text-center">
+            <h2 id="stats-title" className="text-xl font-black tracking-tight sm:text-2xl">
+              {dict.landing.statsTitle}
+            </h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
+              {dict.landing.statsSubtitle}
+            </p>
+            <dl className="mx-auto mt-6 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-5">
+              {(
+                [
+                  ['statCourses', counts.courses],
+                  ['statLessons', counts.lessons],
+                  ['statQuizzes', counts.quizzes],
+                  ['statStories', counts.stories],
+                  ['statVocab', counts.vocabulary],
+                ] as const
+              ).map(([key, value]) => (
+                <div key={key} className="card p-4">
+                  <dt className="text-xs font-semibold text-muted">{dict.landing[key]}</dt>
+                  <dd className="mt-1 text-2xl font-black text-brand-700 dark:text-brand-300">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="levels-title" className="relative mx-auto w-full max-w-6xl px-4 pb-10 text-center">
+          <h2 id="levels-title" className="text-xl font-black tracking-tight sm:text-2xl">
+            {dict.landing.levelsTitle}
+          </h2>
+          <ul className="mx-auto mt-5 flex max-w-3xl flex-wrap items-center justify-center gap-2">
+            {Object.values(dict.levels).map((label) => (
+              <li key={label} className="rounded-full border border-line surface px-3.5 py-1.5 text-sm font-bold">
+                {label}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-muted">{dict.landing.levelsHint}</p>
         </section>
 
         <section className="relative mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-10 sm:grid-cols-2 lg:grid-cols-3">

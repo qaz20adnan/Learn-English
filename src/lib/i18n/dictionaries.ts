@@ -1,4 +1,5 @@
 import type { Level, VerificationStatus } from '../types';
+import type { RoadmapStatus } from '../roadmap';
 
 /**
  * UI dictionaries. `ar` is the source of truth: the `Dictionary` type is derived
@@ -36,9 +37,15 @@ const ar = {
     no: 'لا',
     footerNote: 'تُفحص روابط الوسائط عبر واجهات oEmbed الرسمية.',
   },
+  toasts: {
+    favoriteAdded: 'أُضيفت الكلمة إلى المفضلة ⭐',
+    favoriteRemoved: 'أُزيلت الكلمة من المفضلة',
+    actionFailed: 'تعذّر إكمال العملية، أعد المحاولة',
+  },
   nav: {
     aria: 'التنقل الرئيسي',
     dashboard: 'الرئيسية',
+    roadmap: 'خارطتي',
     courses: 'الكورسات',
     quizzes: 'الاختبارات',
     stories: 'القصص',
@@ -49,6 +56,7 @@ const ar = {
   },
   navHints: {
     dashboard: 'نظرة سريعة على تقدمك ومهام اليوم',
+    roadmap: 'مسارك من A1 إلى C1 حسب إنجازك الفعلي',
     courses: 'تصفّح المسارات التعليمية المرتبة',
     quizzes: 'اختبر مستواك وتحدّى نفسك',
     stories: 'اقرأ قصصًا مبسّطة واختبر فهمك',
@@ -339,6 +347,47 @@ const ar = {
     reshuffle: '🎲 كلمات أخرى',
     emptyTitle: 'لا توجد مفردات بعد',
     emptyDescription: 'ستظهر المفردات بعد إضافة الكورسات.',
+    toolbar: {
+      searchLabel: 'بحث',
+      searchPlaceholder: 'ابحث بالكلمة أو الترجمة أو المثال…',
+      levelLabel: 'المستوى',
+      levelAll: 'كل المستويات',
+      posLabel: 'نوع الكلمة',
+      posAll: 'كل الأنواع',
+      apply: 'تطبيق',
+      reset: 'مسح',
+      practiceCta: '🎴 تدرب بالبطاقات',
+      randomHint: 'عرض عشوائي من البنك — استخدم البحث للوصول إلى أي كلمة.',
+      resultsCount: (shown: number, total: number) => `عرض ${shown} من ${total} كلمة`,
+      pageInfo: (page: number, totalPages: number) => `صفحة ${page} من ${totalPages}`,
+      prev: 'السابق',
+      next: 'التالي',
+      noResultsTitle: 'لا نتائج مطابقة',
+      noResultsBody: 'جرّب كلمة بحث أخرى أو غيّر الفلاتر.',
+    },
+    practice: {
+      metaTitle: 'تدريب المفردات',
+      title: 'تدريب البطاقات',
+      description: 'اقلب البطاقة ثم اختر: أعرفها أو راجعها لاحقًا — بدون تأثير على جدول المراجعة.',
+      cardProgress: (current: number, total: number) => `بطاقة ${current} من ${total}`,
+      reveal: 'اكشف المعنى',
+      tapToReveal: 'اضغط لعرض المعنى',
+      knowIt: 'أعرفها ✓',
+      studyAgain: 'راجعها لاحقًا 🔄',
+      completedTitle: (known: number, again: number) =>
+        again > 0
+          ? `أكملت التدريب! عرفت ${known} كلمة وتبقى ${again} للمراجعة.`
+          : `أكملت التدريب! عرفت كل الكلمات (${known}).`,
+      knownBadge: (count: number) => `أعرفها: ${count}`,
+      againBadge: (count: number) => `للمراجعة: ${count}`,
+      sessionStats: (known: number, again: number) =>
+        `هذه الجلسة: ${known} أعرفها · ${again} للمراجعة`,
+      restartAll: '🔁 تدريب جديد بكل الكلمات',
+      restartAgain: '🎯 درّب على الكلمات التي تحتاج مراجعة',
+      backToBank: '← عودة إلى بنك المفردات',
+      emptyTitle: 'لا توجد كلمات مطابقة',
+      emptyDescription: 'غيّر البحث أو الفلاتر ثم حاول مرة أخرى.',
+    },
   },
   review: {
     metaTitle: 'المراجعة',
@@ -403,6 +452,36 @@ const ar = {
     byCourse: 'التقدّم حسب الكورس',
     ofLessons: (done: number, total: number) => `${done} من ${total} دروس`,
     open: 'افتح',
+  },
+  roadmap: {
+    metaTitle: 'خارطة التعلم',
+    title: 'خارطة التعلم',
+    description: 'مسارك من A1 إلى C1 — يُحدَّث تلقائيًا من إنجازك الفعلي في الدروس.',
+    heroCurrent: 'مستواك الحالي',
+    heroOverall: (percent: number) => `أكملت ${percent}% من محتوى المسار`,
+    heroAllDone: 'أنجزت كل محتوى المسار المتاح — عمل مذهل! 🎉',
+    nextTitle: 'خطوتك التالية',
+    fromCourse: 'من كورس',
+    continue: 'متابعة المسار',
+    continueHere: 'متابعة هذه المرحلة',
+    browse: 'استعرض الكورسات',
+    youAreHere: 'أنت هنا',
+    pathTitle: 'المسار الكامل',
+    status: {
+      completed: 'مكتمل',
+      in_progress: 'قيد التقدم',
+      upcoming: 'لم يبدأ بعد',
+      empty: 'قريبًا',
+    } satisfies Record<RoadmapStatus, string>,
+    chips: {
+      courses: (n: number) => `📘 ${n} كورسات`,
+      lessons: (n: number) => `🎓 ${n} دروس`,
+      stories: (n: number) => `📖 ${n} قصص`,
+      quizzes: (n: number) => `📝 ${n} اختبارات`,
+    },
+    emptyPlatform: 'لا يوجد محتوى منشور بعد — عد قريبًا.',
+    emptyPlatformHint:
+      'ستظهر مراحل المسار تلقائيًا بمجرد نشر الكورسات والقصص والاختبارات.',
   },
   quizzes: {
     metaTitle: 'الاختبارات',
@@ -551,6 +630,15 @@ const ar = {
       'كورسات، فيديو وصوت، مفردات بمراجعة ذكية، قصص واختبارات، وتتبع دقيق للتقدم — كل ذلك في مكان واحد.',
     ctaRegister: 'أنشئ حسابك المجاني',
     ctaLogin: 'لدي حساب',
+    statsTitle: 'مكتبة حقيقية بأرقام من المنصة نفسها',
+    statsSubtitle: 'تُقرأ هذه الأرقام مباشرة من قاعدة بيانات المنصة عند فتح الصفحة — لا إحصاءات تسويقية.',
+    statCourses: 'كورس',
+    statLessons: 'درس',
+    statQuizzes: 'اختبار',
+    statStories: 'قصة',
+    statVocab: 'مفردة',
+    levelsTitle: 'ستة مستويات وفق السلم الأوروبي CEFR',
+    levelsHint: 'من التأسيس إلى C1. محتوى المستوى A2 قيد الإثراء حالياً ويُضاف تدريجياً.',
     footer:
       'Fluently | فلوينتلي — بُني بـ Next.js وPostgreSQL. جميع الروابط الخارجية تُفحص عبر واجهاتها الرسمية.',
     features: [
@@ -619,9 +707,15 @@ const en: Dictionary = {
     no: 'No',
     footerNote: 'Media links are verified through the official oEmbed APIs.',
   },
+  toasts: {
+    favoriteAdded: 'Word added to favorites',
+    favoriteRemoved: 'Word removed from favorites',
+    actionFailed: 'Action failed, please try again',
+  },
   nav: {
     aria: 'Main navigation',
     dashboard: 'Home',
+    roadmap: 'My path',
     courses: 'Courses',
     quizzes: 'Quizzes',
     stories: 'Stories',
@@ -632,6 +726,7 @@ const en: Dictionary = {
   },
   navHints: {
     dashboard: 'A quick view of your progress and today’s tasks',
+    roadmap: 'Your A1→C1 journey based on your real progress',
     courses: 'Browse the ordered learning paths',
     quizzes: 'Test your level and challenge yourself',
     stories: 'Read simplified stories and check your understanding',
@@ -926,6 +1021,48 @@ const en: Dictionary = {
     reshuffle: '🎲 Shuffle words',
     emptyTitle: 'No vocabulary yet',
     emptyDescription: 'Vocabulary will appear once courses are added.',
+    toolbar: {
+      searchLabel: 'Search',
+      searchPlaceholder: 'Search by word, translation or example…',
+      levelLabel: 'Level',
+      levelAll: 'All levels',
+      posLabel: 'Part of speech',
+      posAll: 'All types',
+      apply: 'Apply',
+      reset: 'Clear',
+      practiceCta: '🎴 Practice cards',
+      randomHint: 'random sample — use search to reach any word',
+      resultsCount: (shown: number, total: number) => `Showing ${shown} of ${total} words`,
+      pageInfo: (page: number, totalPages: number) => `Page ${page} of ${totalPages}`,
+      prev: 'Previous',
+      next: 'Next',
+      noResultsTitle: 'No matching words',
+      noResultsBody: 'Try a different search term or clear the filters.',
+    },
+    practice: {
+      metaTitle: 'Vocabulary practice',
+      title: 'Practice deck',
+      description:
+        'Flip each card, then choose: I know it or study again — no effect on your review schedule.',
+      cardProgress: (current: number, total: number) => `Card ${current} of ${total}`,
+      reveal: 'Reveal meaning',
+      tapToReveal: 'Tap to reveal',
+      knowIt: 'I know it ✓',
+      studyAgain: 'Study again 🔄',
+      completedTitle: (known: number, again: number) =>
+        again > 0
+          ? `Practice complete! You know ${known} words and ${again} need another look.`
+          : `Practice complete! You know all ${known} words.`,
+      knownBadge: (count: number) => `Known: ${count}`,
+      againBadge: (count: number) => `To review: ${count}`,
+      sessionStats: (known: number, again: number) =>
+        `This session: ${known} known · ${again} to review`,
+      restartAll: '🔁 New session with all cards',
+      restartAgain: '🎯 Practice the cards you marked for review',
+      backToBank: '← Back to the vocabulary bank',
+      emptyTitle: 'No matching words',
+      emptyDescription: 'Adjust the search or filters and try again.',
+    },
   },
   review: {
     metaTitle: 'Review',
@@ -990,6 +1127,36 @@ const en: Dictionary = {
     byCourse: 'Progress by course',
     ofLessons: (done: number, total: number) => `${done} of ${total} lessons`,
     open: 'Open',
+  },
+  roadmap: {
+    metaTitle: 'Learning roadmap',
+    title: 'Learning roadmap',
+    description: 'Your path from A1 to C1 — updated automatically from your real lesson progress.',
+    heroCurrent: 'Your current level',
+    heroOverall: (percent: number) => `You completed ${percent}% of the path content`,
+    heroAllDone: 'You finished every available step on the path — amazing work! 🎉',
+    nextTitle: 'Your next step',
+    fromCourse: 'from course',
+    continue: 'Continue the path',
+    continueHere: 'Continue this step',
+    browse: 'Browse courses',
+    youAreHere: 'You are here',
+    pathTitle: 'The full path',
+    status: {
+      completed: 'Completed',
+      in_progress: 'In progress',
+      upcoming: 'Not started yet',
+      empty: 'Coming soon',
+    } satisfies Record<RoadmapStatus, string>,
+    chips: {
+      courses: (n: number) => `📘 ${n} courses`,
+      lessons: (n: number) => `🎓 ${n} lessons`,
+      stories: (n: number) => `📖 ${n} stories`,
+      quizzes: (n: number) => `📝 ${n} quizzes`,
+    },
+    emptyPlatform: 'No published content yet — check back soon.',
+    emptyPlatformHint:
+      'Path stages will appear automatically once courses, stories and quizzes are published.',
   },
   quizzes: {
     metaTitle: 'Quizzes',
@@ -1139,6 +1306,15 @@ const en: Dictionary = {
       'Courses, video and audio, vocabulary with smart review, stories and quizzes, and accurate progress tracking — all in one place.',
     ctaRegister: 'Create your free account',
     ctaLogin: 'I have an account',
+    statsTitle: 'A real library, with numbers straight from the platform',
+    statsSubtitle: 'These figures are read live from the platform database on every page load — no marketing claims.',
+    statCourses: 'Courses',
+    statLessons: 'Lessons',
+    statQuizzes: 'Quizzes',
+    statStories: 'Stories',
+    statVocab: 'Vocabulary',
+    levelsTitle: 'Six levels aligned with CEFR',
+    levelsHint: 'From Foundation to C1. A2 content is being enriched and added gradually.',
     footer:
       'Fluently — built with Next.js and PostgreSQL. All external links are checked through their official APIs.',
     features: [

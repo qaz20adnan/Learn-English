@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { HeaderFallback, SiteHeader } from '@/components/layout/SiteHeader';
 import { DeveloperCredit } from '@/components/layout/DeveloperCredit';
 import { LocaleProvider } from '@/components/i18n/LocaleProvider';
+import { ToastHost } from '@/components/ui/toast';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 
 function PageFallback() {
@@ -49,6 +50,7 @@ async function AppChrome({ children }: { children: ReactNode }) {
           </div>
         </div>
       </footer>
+      <ToastHost />
     </LocaleProvider>
   );
 }

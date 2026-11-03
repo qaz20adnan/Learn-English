@@ -1,6 +1,7 @@
 import { all, newId, nowIso, one, run } from './client';
 import { computeStreak, levelForPoints } from '../points';
 import { DEFAULT_QUIZ_PASS_PERCENT } from '../progression';
+import { foldToStep, type RoadmapStep } from '../roadmap';
 import type {
   Course,
   CourseProgressSummary,
@@ -826,6 +827,133 @@ export async function getLearningStats(userId: string): Promise<LearningStats> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Learning roadmap                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface RoadmapStepCounts {
+  level: Level;
+  totalLessons: number;
+  doneLessons: number;
+  courses: number;
+  stories: number;
+  quizzes: number;
+}
+
+export interface RoadmapNextLesson {
+  step: RoadmapStep;
+  courseSlug: string;
+  courseTitle: string;
+  courseTitleAr: string | null;
+  courseEmoji: string;
+  lessonSlug: string;
+  lessonTitle: string;
+  lessonTitleAr: string | null;
+}
+
+export interface RoadmapData {
+  /** One row per stored level that has any published content. */
+  steps: RoadmapStepCounts[];
+  /** First lesson the learner has not completed, following the path order. */
+  nextLesson: RoadmapNextLesson | null;
+}
+
+const LEVEL_ORDER: Record<Level, number> = {
+  foundation: 0,
+  a1: 1,
+  a2: 2,
+  b1: 3,
+  b2: 4,
+  c1: 5,
+};
+
+/** Stored levels folded onto the visible CEFR steps, in path order. */
+const STEP_CASE_SQL =
+  "CASE c.level WHEN 'foundation' THEN 0 WHEN 'a1' THEN 0 WHEN 'a2' THEN 1 WHEN 'b1' THEN 2 WHEN 'b2' THEN 3 ELSE 4 END";
+
+export async function getRoadmapData(userId: string): Promise<RoadmapData> {
+  const [lessonRows, courseRows, storyRows, quizRows, nextRows] = await Promise.all([
+    all<{ level: Level; total: number; done: number }>(
+      `SELECT c.level AS level,
+              COUNT(l.id)::int AS total,
+              COUNT(CASE WHEN p.status = 'COMPLETED' THEN 1 END)::int AS done
+         FROM courses c
+         JOIN lessons l ON l.course_id = c.id
+         LEFT JOIN lesson_progress p ON p.lesson_id = l.id AND p.user_id = ?
+        WHERE c.is_published = 1
+        GROUP BY c.level`,
+      userId,
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM courses WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM stories WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{ level: Level; c: number }>(
+      'SELECT level, COUNT(*)::int AS c FROM quizzes WHERE is_published = 1 GROUP BY level',
+    ),
+    all<{
+      level: Level;
+      course_slug: string;
+      course_title: string;
+      course_title_ar: string | null;
+      course_emoji: string;
+      lesson_slug: string;
+      lesson_title: string;
+      lesson_title_ar: string | null;
+    }>(
+      `SELECT c.level AS level, c.slug AS course_slug, c.title AS course_title,
+              c.title_ar AS course_title_ar, c.cover_emoji AS course_emoji,
+              l.slug AS lesson_slug, l.title AS lesson_title,
+              l.title_ar AS lesson_title_ar
+         FROM courses c
+         JOIN lessons l ON l.course_id = c.id
+         LEFT JOIN lesson_progress p
+                ON p.lesson_id = l.id AND p.user_id = ? AND p.status = 'COMPLETED'
+        WHERE c.is_published = 1 AND p.id IS NULL
+        ORDER BY ${STEP_CASE_SQL}, c.position, l.position
+        LIMIT 1`,
+      userId,
+    ),
+  ]);
+
+  // Every stored level that owns any published content — even a course
+  // without lessons still counts towards the step chips.
+  const levels = new Set<Level>([
+    ...courseRows.map((row) => row.level),
+    ...lessonRows.map((row) => row.level),
+  ]);
+  const steps: RoadmapStepCounts[] = [...levels].map((level) => {
+    const lessonRow = lessonRows.find((row) => row.level === level);
+    return {
+      level,
+      totalLessons: lessonRow?.total ?? 0,
+      doneLessons: lessonRow?.done ?? 0,
+      courses: courseRows.find((row) => row.level === level)?.c ?? 0,
+      stories: storyRows.find((row) => row.level === level)?.c ?? 0,
+      quizzes: quizRows.find((row) => row.level === level)?.c ?? 0,
+    };
+  });
+  steps.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+
+  const next = nextRows[0];
+  const nextLesson: RoadmapNextLesson | null = next
+    ? {
+        step: foldToStep(next.level),
+        courseSlug: next.course_slug,
+        courseTitle: next.course_title,
+        courseTitleAr: next.course_title_ar,
+        courseEmoji: next.course_emoji,
+        lessonSlug: next.lesson_slug,
+        lessonTitle: next.lesson_title,
+        lessonTitleAr: next.lesson_title_ar,
+      }
+    : null;
+
+  return { steps, nextLesson };
+}
+
+/* ------------------------------------------------------------------ */
 /* Vocabulary & spaced repetition                                      */
 /* ------------------------------------------------------------------ */
 
@@ -835,15 +963,22 @@ export interface VocabularyQuery {
   limit?: number;
 }
 
-/** Shared (non user-owned) vocabulary — the public word bank, randomly ordered. */
+/**
+ * Shared (non user-owned) vocabulary — the public word bank, randomly ordered.
+ *
+ * Applies the exact same visibility rule as `listVocabularyPaged` (T1 fix):
+ * words attached to an unpublished course stay hidden here too, so a word that
+ * shows up in the random sample is always findable through search & filters.
+ */
 export async function listVocabulary(options: VocabularyQuery = {}): Promise<Vocabulary[]> {
-  const clauses = ['created_by IS NULL'];
+  const clauses = ['v.created_by IS NULL', '(v.course_id IS NULL OR c.is_published = 1)'];
   const params: (string | number)[] = [];
   if (options.courseId) {
-    clauses.push('course_id = ?');
+    clauses.push('v.course_id = ?');
     params.push(options.courseId);
   }
-  let sql = `SELECT * FROM vocabulary WHERE ${clauses.join(' AND ')} ORDER BY RANDOM()`;
+  let sql = `SELECT v.* FROM vocabulary v LEFT JOIN courses c ON c.id = v.course_id
+             WHERE ${clauses.join(' AND ')} ORDER BY RANDOM()`;
   if (options.limit && options.limit > 0) {
     sql += ' LIMIT ?';
     params.push(options.limit);
@@ -863,6 +998,132 @@ export async function countVocabulary(courseId?: string): Promise<number> {
         'SELECT COUNT(*)::int AS c FROM vocabulary WHERE created_by IS NULL',
       );
   return row?.c ?? 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Vocabulary library — search, filters & practice deck (Sprint 2)     */
+/* ------------------------------------------------------------------ */
+
+export interface VocabularyListFilters {
+  /** Free-text search across term, translation and example. */
+  q?: string;
+  /** Filter by the CEFR level of the owning course (requires a course). */
+  level?: Level;
+  /** Filter by part of speech, e.g. "noun". */
+  pos?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface VocabularyListPage {
+  items: Vocabulary[];
+  page: number;
+  totalPages: number;
+  total: number;
+}
+
+interface VocabularyFilterSpec {
+  q?: string;
+  level?: Level;
+  pos?: string;
+}
+
+/** Builds the shared WHERE clause for the vocabulary library queries. */
+function vocabularyFilterClauses(spec: VocabularyFilterSpec, params: unknown[]): string {
+  const conds: string[] = [
+    'v.created_by IS NULL',
+    '(v.course_id IS NULL OR c.is_published = 1)',
+  ];
+
+  const q = spec.q?.trim();
+  if (q) {
+    params.push(`%${q.toLowerCase()}%`);
+    conds.push(
+      `(LOWER(v.term) LIKE ? OR LOWER(v.translation) LIKE ? OR LOWER(COALESCE(v.example, '')) LIKE ?)`,
+    );
+    // The same LIKE pattern is reused three times.
+    params.push(params[params.length - 1], params[params.length - 1]);
+  }
+
+  if (spec.level) {
+    params.push(spec.level);
+    conds.push(`c.level = ?`);
+  }
+
+  if (spec.pos) {
+    params.push(spec.pos);
+    conds.push(`v.part_of_speech = ?`);
+  }
+
+  return conds.join('\n   AND ');
+}
+
+const VOCABULARY_LIBRARY_FROM = `
+     FROM vocabulary v
+     LEFT JOIN courses c ON c.id = v.course_id`;
+
+/**
+ * Paged, filterable view of the shared word bank (search + CEFR level +
+ * part of speech). Deterministic alphabetical order so pagination stays
+ * stable across requests.
+ */
+export async function listVocabularyPaged(
+  filters: VocabularyListFilters = {},
+): Promise<VocabularyListPage> {
+  const page = Math.max(1, Math.floor(filters.page ?? 1) || 1);
+  const pageSize = Math.min(100, Math.max(1, Math.floor(filters.pageSize ?? 36) || 36));
+
+  const params: unknown[] = [];
+  const where = vocabularyFilterClauses(filters, params);
+
+  const totalRow = await one<{ c: number }>(
+    `SELECT COUNT(*)::int AS c ${VOCABULARY_LIBRARY_FROM} WHERE ${where}`,
+    ...params,
+  );
+  const total = totalRow?.c ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages);
+
+  params.push(pageSize, (safePage - 1) * pageSize);
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* ${VOCABULARY_LIBRARY_FROM} WHERE ${where}
+     ORDER BY LOWER(v.term) ASC, v.id ASC
+     LIMIT ? OFFSET ?`,
+    ...params,
+  );
+
+  return { items: rows.map(toVocabulary), page: safePage, totalPages, total };
+}
+
+/**
+ * Random sample of the word bank for practice sessions. Accepts the same
+ * filters as the library so learners can practice exactly what they browse.
+ */
+export async function listPracticeWords(
+  filters: VocabularyListFilters = {},
+  limit = 20,
+): Promise<Vocabulary[]> {
+  const safeLimit = Math.min(50, Math.max(1, Math.floor(limit) || 20));
+  const params: unknown[] = [];
+  const where = vocabularyFilterClauses(filters, params);
+
+  params.push(safeLimit);
+  const rows = await all<VocabularyRow>(
+    `SELECT v.* ${VOCABULARY_LIBRARY_FROM} WHERE ${where}
+     ORDER BY RANDOM() LIMIT ?`,
+    ...params,
+  );
+  return rows.map(toVocabulary);
+}
+
+/** Distinct parts of speech present in the shared bank (for the filter dropdown). */
+export async function listVocabularyPartsOfSpeech(): Promise<string[]> {
+  const rows = await all<{ part_of_speech: string }>(
+    `SELECT DISTINCT v.part_of_speech ${VOCABULARY_LIBRARY_FROM} WHERE v.created_by IS NULL
+     AND (v.course_id IS NULL OR c.is_published = 1)
+     ORDER BY 1 ASC`,
+  );
+  return rows.map((row) => row.part_of_speech);
 }
 
 /** Words created by a single learner ("my saved words"). */
@@ -1786,4 +2047,26 @@ export async function logAudit(input: {
     input.detail ?? null,
     nowIso(),
   );
+}
+
+export type PublicCounts = {
+  courses: number;
+  lessons: number;
+  quizzes: number;
+  stories: number;
+  vocabulary: number;
+};
+
+/** Live content counts for the public landing page — real data only, no marketing numbers. */
+export async function getPublicCounts(): Promise<PublicCounts> {
+  const row = await one<PublicCounts>(`
+    SELECT
+      (SELECT COUNT(*)::int FROM courses) AS courses,
+      (SELECT COUNT(*)::int FROM lessons) AS lessons,
+      (SELECT COUNT(*)::int FROM quizzes) AS quizzes,
+      (SELECT COUNT(*)::int FROM stories) AS stories,
+      (SELECT COUNT(*)::int FROM vocabulary) AS vocabulary
+  `);
+  if (!row) throw new Error('public counts unavailable');
+  return row;
 }

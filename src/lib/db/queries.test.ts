@@ -23,6 +23,7 @@ import {
   getQuizSessionForUser,
   listCourseAssessments,
   getPointsTotal,
+  getRoadmapData,
   getReviewCard,
   getSettings,
   getVocabularyForUser,
@@ -30,7 +31,11 @@ import {
   listDueCards,
   listFavoriteIds,
   listFavoriteVocabulary,
+  listPracticeWords,
   listUsers,
+  listVocabulary,
+  listVocabularyPaged,
+  listVocabularyPartsOfSpeech,
   saveLessonProgress,
   saveQuizAttempt,
   saveReviewState,
@@ -443,5 +448,193 @@ describe('lesson assessments and quiz sessions', () => {
 
     await deleteQuizSession(user.id, first!.id);
     expect(await getQuizSessionForUser(user.id, first!.id)).toBeNull();
+  });
+});
+
+describe('vocabulary library — search, filters & practice (Sprint 2)', () => {
+  it('searches, filters, paginates and samples the shared word bank', async () => {
+    const a1Course = newId('crs');
+    const b1Unpublished = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'A1 Vocab Course', 'd', 'a1', 'General', '📘', 'brand', 1, 1, ?, ?)`,
+      a1Course,
+      `a1-${a1Course}`,
+      nowIso(),
+      nowIso(),
+    );
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'B1 Draft Course', 'd', 'b1', 'General', '📘', 'brand', 0, 2, ?, ?)`,
+      b1Unpublished,
+      `b1-${b1Unpublished}`,
+      nowIso(),
+      nowIso(),
+    );
+
+    await createVocabulary({ courseId: a1Course, term: 'library-apple', translation: 'تفاحة', partOfSpeech: 'noun', example: 'I eat an apple.' });
+    await createVocabulary({ courseId: a1Course, term: 'library-arrive', translation: 'يصل متأخراً', partOfSpeech: 'verb' });
+    await createVocabulary({ courseId: b1Unpublished, term: 'library-zebra', translation: 'حصان وحشي' });
+    await createVocabulary({ term: 'library-banana', translation: 'موز أصفر', partOfSpeech: 'noun' });
+
+    // Plain listing: shared bank only (published courses + unowned words).
+    const all = await listVocabularyPaged({ pageSize: 100 });
+    const allTerms = all.items.map((word) => word.term);
+    expect(allTerms).toContain('library-apple');
+    expect(allTerms).toContain('library-banana');
+    expect(allTerms).not.toContain('library-zebra'); // draft course stays hidden
+
+    // Deterministic alphabetical order.
+    const sorted = [...allTerms].sort((a, b) => a.localeCompare(b));
+    expect(allTerms).toEqual(sorted);
+
+    // Free-text search across term, translation and example.
+    expect((await listVocabularyPaged({ q: 'LIBRARY-APPLE' })).items.map((w) => w.term)).toEqual(['library-apple']);
+    expect((await listVocabularyPaged({ q: 'يصل متأخراً' })).items.map((w) => w.term)).toEqual(['library-arrive']);
+    expect((await listVocabularyPaged({ q: 'eat an apple' })).items.map((w) => w.term)).toEqual(['library-apple']);
+
+    // Level filter follows the owning course.
+    const a1Words = await listVocabularyPaged({ level: 'a1', pageSize: 100 });
+    expect(a1Words.items.map((w) => w.term).sort()).toEqual(['library-apple', 'library-arrive']);
+
+    // Part-of-speech filter.
+    expect((await listVocabularyPaged({ pos: 'verb', pageSize: 100 })).items.map((w) => w.term))
+      .toContain('library-arrive');
+
+    // Pagination.
+    const page1 = await listVocabularyPaged({ q: 'library-', pageSize: 2, page: 1 });
+    expect(page1.items).toHaveLength(2);
+    expect(page1.total).toBeGreaterThanOrEqual(3);
+    expect(page1.totalPages).toBeGreaterThanOrEqual(2);
+    const page2 = await listVocabularyPaged({ q: 'library-', pageSize: 2, page: 2 });
+    expect(page2.items).toHaveLength(1);
+    expect(page1.items.map((w) => w.id)).not.toEqual(page2.items.map((w) => w.id));
+
+    // T1 regression — the random sampler (listVocabulary) must apply the same
+    // visibility rule as the paged search: words linked to a draft course stay
+    // hidden, so everything displayed is also findable via search.
+    const sampled = await listVocabulary({ limit: 100 }).then((rows) => rows.map((w) => w.term));
+    expect(sampled).toContain('library-banana');
+    expect(sampled).not.toContain('library-zebra');
+
+    // Practice sampler respects the same filters and the limit.
+    const practice = await listPracticeWords({ level: 'a1' }, 1);
+    expect(practice).toHaveLength(1);
+    expect(['library-apple', 'library-arrive']).toContain(practice[0]!.term);
+    const practiceAll = await listPracticeWords({ level: 'a1' }, 10);
+    expect(practiceAll.length).toBe(2);
+
+    // Distinct parts of speech for the filter dropdown.
+    const parts = await listVocabularyPartsOfSpeech();
+    expect(parts).toContain('noun');
+    expect(parts).toContain('verb');
+  });
+});
+
+describe('learning roadmap (Sprint 3)', () => {
+  async function seedRoadmapCourse(level: string, position: number, lessonCount: number) {
+    const courseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Roadmap Course', 'd', ?, 'General', '📘', 'brand', 1, ?, ?, ?)`,
+      courseId,
+      `rm-${courseId}`,
+      level,
+      position,
+      nowIso(),
+      nowIso(),
+    );
+    const lessonIds: string[] = [];
+    const lessonSlugs: string[] = [];
+    for (let i = 0; i < lessonCount; i += 1) {
+      const lessonId = newId('les');
+      const slug = `rm-${lessonId}-${i}`;
+      await run(
+        `INSERT INTO lessons (id, course_id, slug, title, summary, content, transcript, duration_minutes, position, created_at, updated_at)
+         VALUES (?, ?, ?, 'Roadmap Lesson', 's', 'b', 't', 5, ?, ?, ?)`,
+        lessonId,
+        courseId,
+        slug,
+        i + 1,
+        nowIso(),
+        nowIso(),
+      );
+      lessonIds.push(lessonId);
+      lessonSlugs.push(slug);
+    }
+    return { courseId, lessonIds, lessonSlugs };
+  }
+
+  async function seedUser() {
+    return createUser({
+      email: `rm-${newId('u')}@test.dev`,
+      name: 'Roadmap Learner',
+      passwordHash: 'hash',
+    });
+  }
+
+  it('points a fresh learner at the first path lesson and folds foundation into A1', async () => {
+    const user = await seedUser();
+    const foundation = await seedRoadmapCourse('foundation', 0, 1);
+    const data = await getRoadmapData(user.id);
+    expect(data.nextLesson).not.toBeNull();
+    expect(data.nextLesson?.lessonSlug).toBe(foundation.lessonSlugs[0]);
+    expect(data.nextLesson?.step).toBe('a1');
+    expect(data.nextLesson?.courseSlug).toBe(`rm-${foundation.courseId}`);
+  });
+
+  it('advances to the next uncompleted lesson once the first is completed', async () => {
+    const user = await seedUser();
+    const foundation = await seedRoadmapCourse('foundation', 0, 1);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: foundation.lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+    const data = await getRoadmapData(user.id);
+    expect(data.nextLesson).not.toBeNull();
+    expect(data.nextLesson?.lessonSlug).not.toBe(foundation.lessonSlugs[0]);
+    // Untouched published A1 lessons are the next thing on the path.
+    expect(data.nextLesson?.step).toBe('a1');
+  });
+
+  it('aggregates per-level course, lesson and completion counts', async () => {
+    const user = await seedUser();
+    const a2 = await seedRoadmapCourse('a2', 0, 2);
+    const before = await getRoadmapData(user.id);
+    const a2Before = before.steps.find((step) => step.level === 'a2');
+    expect(a2Before?.courses).toBe(1);
+    expect(a2Before?.totalLessons).toBe(2);
+    expect(a2Before?.doneLessons).toBe(0);
+
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: a2.lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+    const after = await getRoadmapData(user.id);
+    const a2After = after.steps.find((step) => step.level === 'a2');
+    expect(a2After?.doneLessons).toBe(1);
+    expect(a2After?.totalLessons).toBe(2);
+  });
+
+  it('excludes unpublished courses from every aggregate', async () => {
+    const user = await seedUser();
+    const courseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Draft', 'd', 'b1', 'General', '📘', 'brand', 0, 0, ?, ?)`,
+      courseId,
+      `rm-draft-${courseId}`,
+      nowIso(),
+      nowIso(),
+    );
+    const data = await getRoadmapData(user.id);
+    // No published B1 content exists: the level must not appear at all.
+    expect(data.steps.find((step) => step.level === 'b1')).toBeUndefined();
   });
 });

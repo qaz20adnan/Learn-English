@@ -17,6 +17,7 @@ export interface NavItem {
 
 export const MAIN_NAV: NavItem[] = [
   { href: '/dashboard', key: 'dashboard', emoji: '🏠' },
+  { href: '/roadmap', key: 'roadmap', emoji: '🗺️' },
   { href: '/courses', key: 'courses', emoji: '📚' },
   { href: '/quizzes', key: 'quizzes', emoji: '📝' },
   { href: '/stories', key: 'stories', emoji: '📖' },
