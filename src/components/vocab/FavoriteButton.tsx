@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { Heart } from 'lucide-react';
 import { useI18n } from '@/components/i18n/LocaleProvider';
+import { showToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 
 export function FavoriteButton({
@@ -31,9 +33,14 @@ export function FavoriteButton({
         body: JSON.stringify({ vocabId, favorite: next }),
       });
       if (!res.ok) throw new Error('failed');
+      showToast({
+        message: next ? dict.toasts.favoriteAdded : dict.toasts.favoriteRemoved,
+        tone: 'success',
+      });
       startTransition(() => router.refresh());
     } catch {
       setFavorite(!next);
+      showToast({ message: dict.toasts.actionFailed, tone: 'warning' });
     } finally {
       setBusy(false);
     }
@@ -52,11 +59,14 @@ export function FavoriteButton({
       className={cn(
         'inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold transition disabled:opacity-60',
         favorite
-          ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
-          : 'border-line text-muted hover:border-amber-400 hover:text-amber-600',
+          ? 'border-warning-500/50 bg-warning-50 text-warning-700 dark:border-warning-500/40 dark:bg-warning-500/10 dark:text-warning-200'
+          : 'border-line text-muted hover:border-warning-500 hover:text-warning-600',
       )}
     >
-      <span aria-hidden>{favorite ? '⭐' : '☆'}</span>
+      <Heart
+        className={cn('size-3.5', favorite && 'fill-current')}
+        aria-hidden
+      />
       {showLabel ? <span>{label}</span> : null}
     </button>
   );

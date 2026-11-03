@@ -75,20 +75,29 @@ export function ProgressBar({
 
 export function EmptyState({
   emoji = '🗂️',
+  icon,
   title,
   description,
   action,
 }: {
   emoji?: string;
+  /** Optional lucide icon rendered instead of the emoji (design-system D3). */
+  icon?: ReactNode;
   title: string;
   description?: string;
   action?: ReactNode;
 }) {
   return (
     <div className="card flex flex-col items-center gap-3 p-10 text-center">
-      <span className="text-4xl" aria-hidden>
-        {emoji}
-      </span>
+      {icon ? (
+        <span className="flex size-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-900/40 dark:text-brand-300" aria-hidden>
+          {icon}
+        </span>
+      ) : (
+        <span className="text-4xl" aria-hidden>
+          {emoji}
+        </span>
+      )}
       <h3 className="text-lg font-bold">{title}</h3>
       {description ? <p className="max-w-md text-sm text-muted">{description}</p> : null}
       {action}
@@ -101,16 +110,25 @@ export function StatCard({
   value,
   hint,
   emoji,
+  icon,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   emoji?: string;
+  /** Optional lucide icon rendered beside the label instead of an emoji. */
+  icon?: ReactNode;
 }) {
   return (
     <div className="card flex flex-col gap-1 p-4">
-      <span className="text-xs font-medium text-muted">
-        {emoji ? <span aria-hidden>{emoji} </span> : null}
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
+        {icon ? (
+          <span className="text-brand-500 dark:text-brand-300" aria-hidden>
+            {icon}
+          </span>
+        ) : emoji ? (
+          <span aria-hidden>{emoji}</span>
+        ) : null}
         {label}
       </span>
       <span className="text-2xl font-extrabold tracking-tight">{value}</span>
@@ -150,4 +168,26 @@ const levelTones: Record<string, 'success' | 'info' | 'warning'> = {
 
 export function LevelBadge({ level, label }: { level: string; label?: string }) {
   return <Badge tone={levelTones[level] ?? 'neutral'}>{label ?? level}</Badge>;
+}
+
+/**
+ * Loading placeholder block (Stage 2 — D4). Pure presentation; compose it into
+ * page-shaped skeletons. Uses the `.skeleton` shimmer utility from globals.css.
+ */
+export function Skeleton({
+  className,
+  label,
+}: {
+  className?: string;
+  /** Accessible name for meaningful loading regions. */
+  label?: string;
+}) {
+  return (
+    <div
+      className={cn('skeleton', className)}
+      aria-hidden={label ? undefined : true}
+      aria-label={label}
+      role={label ? 'status' : undefined}
+    />
+  );
 }

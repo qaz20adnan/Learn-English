@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { Search } from 'lucide-react';
 import { requireUser } from '@/lib/auth/dal';
 import {
   countDueReviews,
@@ -150,13 +151,19 @@ export default async function VocabularyPage({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto_auto]">
           <label className="flex flex-col gap-1">
             <span className={labelClass}>{tb.searchLabel}</span>
-            <input
-              type="search"
-              name="q"
-              defaultValue={filters.q ?? ''}
-              placeholder={tb.searchPlaceholder}
-              className={selectClass}
-            />
+            <span className="relative block">
+              <Search
+                className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-muted"
+                aria-hidden
+              />
+              <input
+                type="search"
+                name="q"
+                defaultValue={filters.q ?? ''}
+                placeholder={tb.searchPlaceholder}
+                className={`${selectClass} ps-9`}
+              />
+            </span>
           </label>
           <label className="flex flex-col gap-1">
             <span className={labelClass}>{tb.levelLabel}</span>

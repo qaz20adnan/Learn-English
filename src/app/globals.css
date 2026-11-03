@@ -3,7 +3,7 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, [data-theme="midnight"], [data-theme="midnight"] *));
 
 @theme {
-  --font-sans: var(--font-geist-sans), "Segoe UI", Tahoma, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: var(--font-plex-arabic), var(--font-geist-sans), "Segoe UI", Tahoma, "Helvetica Neue", Arial, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-brand-50: #eef2ff;
@@ -30,6 +30,32 @@
   --color-ink-950: #020617;
 
   --radius-xl2: 1.25rem;
+
+  /*
+   * Semantic status tokens (Stage 2 — Design System D2).
+   * Fixed hues shared by every theme; light/dark surfaces adjust around them.
+   *   success  → emerald  (إنجاز وتقدم)
+   *   warning  → soft orange (تنبيه هادئ)
+   *   danger   → clear red (خطأ دون مبالغة)
+   */
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  --color-warning-50: #fff7ed;
+  --color-warning-100: #ffedd5;
+  --color-warning-200: #fed7aa;
+  --color-warning-500: #f97316;
+  --color-warning-600: #ea580c;
+  --color-warning-700: #c2410c;
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-200: #fecaca;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
 }
 
 /*
@@ -229,6 +255,74 @@
   }
   .quote-enter {
     animation: quote-in 0.48s ease-out both;
+  }
+
+  /* Stage 2 — motion system (D6): subtle, CSS-only, reduced-motion aware. */
+  .animate-fade-up {
+    animation: fade-up 0.45s ease-out both;
+  }
+  .animate-toast-in {
+    animation: toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--border);
+    border-radius: 0.75rem;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--surface-raised) 65%, transparent),
+      transparent
+    );
+    animation: skeleton-shimmer 1.6s infinite;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Honour the OS-level reduced-motion preference: kill decorative motion,
+   keep instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

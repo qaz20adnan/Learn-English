@@ -37,6 +37,11 @@ const ar = {
     no: 'لا',
     footerNote: 'تُفحص روابط الوسائط عبر واجهات oEmbed الرسمية.',
   },
+  toasts: {
+    favoriteAdded: 'أُضيفت الكلمة إلى المفضلة ⭐',
+    favoriteRemoved: 'أُزيلت الكلمة من المفضلة',
+    actionFailed: 'تعذّر إكمال العملية، أعد المحاولة',
+  },
   nav: {
     aria: 'التنقل الرئيسي',
     dashboard: 'الرئيسية',
@@ -701,6 +706,11 @@ const en: Dictionary = {
     yes: 'Yes',
     no: 'No',
     footerNote: 'Media links are verified through the official oEmbed APIs.',
+  },
+  toasts: {
+    favoriteAdded: 'Word added to favorites',
+    favoriteRemoved: 'Word removed from favorites',
+    actionFailed: 'Action failed, please try again',
   },
   nav: {
     aria: 'Main navigation',

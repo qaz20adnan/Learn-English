@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { BookCheck, Clock3, LibraryBig, Repeat2 } from 'lucide-react';
 import { requireUser } from '@/lib/auth/dal';
 import {
   getCourseProgressSummaries,
@@ -60,11 +61,11 @@ export default async function DashboardPage() {
       <section>
         <SectionTitle title={t.quickView} description={t.quickViewSub} />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard emoji="✅" label={t.lessonsCompleted} value={stats.lessonsCompleted} />
-          <StatCard emoji="⏱️" label={t.minutesLearned} value={stats.minutesLearned} />
-          <StatCard emoji="📚" label={t.coursesStarted} value={stats.coursesStarted} />
+          <StatCard icon={<BookCheck className="size-4" />} label={t.lessonsCompleted} value={stats.lessonsCompleted} />
+          <StatCard icon={<Clock3 className="size-4" />} label={t.minutesLearned} value={stats.minutesLearned} />
+          <StatCard icon={<LibraryBig className="size-4" />} label={t.coursesStarted} value={stats.coursesStarted} />
           <StatCard
-            emoji="🔁"
+            icon={<Repeat2 className="size-4" />}
             label={t.reviewsDue}
             value={stats.reviewsDue}
             hint={stats.reviewsDue > 0 ? t.reviewNow : t.noReviews}

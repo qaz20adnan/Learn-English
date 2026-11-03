@@ -963,15 +963,22 @@ export interface VocabularyQuery {
   limit?: number;
 }
 
-/** Shared (non user-owned) vocabulary — the public word bank, randomly ordered. */
+/**
+ * Shared (non user-owned) vocabulary — the public word bank, randomly ordered.
+ *
+ * Applies the exact same visibility rule as `listVocabularyPaged` (T1 fix):
+ * words attached to an unpublished course stay hidden here too, so a word that
+ * shows up in the random sample is always findable through search & filters.
+ */
 export async function listVocabulary(options: VocabularyQuery = {}): Promise<Vocabulary[]> {
-  const clauses = ['created_by IS NULL'];
+  const clauses = ['v.created_by IS NULL', '(v.course_id IS NULL OR c.is_published = 1)'];
   const params: (string | number)[] = [];
   if (options.courseId) {
-    clauses.push('course_id = ?');
+    clauses.push('v.course_id = ?');
     params.push(options.courseId);
   }
-  let sql = `SELECT * FROM vocabulary WHERE ${clauses.join(' AND ')} ORDER BY RANDOM()`;
+  let sql = `SELECT v.* FROM vocabulary v LEFT JOIN courses c ON c.id = v.course_id
+             WHERE ${clauses.join(' AND ')} ORDER BY RANDOM()`;
   if (options.limit && options.limit > 0) {
     sql += ' LIMIT ?';
     params.push(options.limit);

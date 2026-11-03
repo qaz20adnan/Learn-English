@@ -33,6 +33,7 @@ import {
   listFavoriteVocabulary,
   listPracticeWords,
   listUsers,
+  listVocabulary,
   listVocabularyPaged,
   listVocabularyPartsOfSpeech,
   saveLessonProgress,
@@ -508,6 +509,13 @@ describe('vocabulary library — search, filters & practice (Sprint 2)', () => {
     const page2 = await listVocabularyPaged({ q: 'library-', pageSize: 2, page: 2 });
     expect(page2.items).toHaveLength(1);
     expect(page1.items.map((w) => w.id)).not.toEqual(page2.items.map((w) => w.id));
+
+    // T1 regression — the random sampler (listVocabulary) must apply the same
+    // visibility rule as the paged search: words linked to a draft course stay
+    // hidden, so everything displayed is also findable via search.
+    const sampled = await listVocabulary({ limit: 100 }).then((rows) => rows.map((w) => w.term));
+    expect(sampled).toContain('library-banana');
+    expect(sampled).not.toContain('library-zebra');
 
     // Practice sampler respects the same filters and the limit.
     const practice = await listPracticeWords({ level: 'a1' }, 1);
