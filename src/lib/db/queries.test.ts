@@ -16,10 +16,15 @@ import {
   findUserById,
   findUserWithSecret,
   getBestStoryScore,
+  getContinueLearning,
   getCourseProgressSummaries,
+  getCourseUnits,
+  getDailyProgress,
   getLearningStats,
   getLessonAssessment,
   getLessonProgress,
+  getLearnerMilestones,
+  getNextRecommendedCourse,
   getQuizSessionForUser,
   listCourseAssessments,
   getPointsTotal,
@@ -32,6 +37,7 @@ import {
   listFavoriteIds,
   listFavoriteVocabulary,
   listPracticeWords,
+  listRecentLessons,
   listUsers,
   listVocabulary,
   listVocabularyPaged,
@@ -43,7 +49,7 @@ import {
   updateSettings,
   updateUserRole,
 } from './queries';
-import { newId, nowIso, run, setQueryExecutor } from './client';
+import { newId, nowIso, one, run, setQueryExecutor } from './client';
 import { SCHEMA_SQL } from './schema';
 
 const pglite = new PGlite();
@@ -636,5 +642,382 @@ describe('learning roadmap (Sprint 3)', () => {
     const data = await getRoadmapData(user.id);
     // No published B1 content exists: the level must not appear at all.
     expect(data.steps.find((step) => step.level === 'b1')).toBeUndefined();
+  });
+});
+
+describe('dashboard extras (sprint 5)', () => {
+  async function seedUser(name = 'Dashboard Learner') {
+    return createUser({
+      email: `db-${newId('u')}@test.dev`,
+      name,
+      passwordHash: 'hash',
+    });
+  }
+
+  async function seedCourseWithLessons(lessonMinutes: number[], position = 99) {
+    const courseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Dash Course', 'desc', 'a1', 'General', '📘', 'brand', 1, ?, ?, ?)`,
+      courseId,
+      `db-${courseId}`,
+      position,
+      nowIso(),
+      nowIso(),
+    );
+    const lessonIds: string[] = [];
+    const lessonSlugs: string[] = [];
+    for (let i = 0; i < lessonMinutes.length; i += 1) {
+      const lessonId = newId('les');
+      await run(
+        `INSERT INTO lessons (id, course_id, slug, title, summary, content, transcript, duration_minutes, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 's', 'b', 't', ?, ?, ?, ?)`,
+        lessonId,
+        courseId,
+        `db-l-${lessonId}`,
+        `Dash Lesson ${i + 1}`,
+        lessonMinutes[i],
+        i + 1,
+        nowIso(),
+        nowIso(),
+      );
+      lessonIds.push(lessonId);
+      lessonSlugs.push(`db-l-${lessonId}`);
+    }
+    return { courseId, lessonIds, lessonSlugs };
+  }
+
+  it('getDailyProgress counts distinct lessons touched today against the goal', async () => {
+    const user = await seedUser();
+    const { lessonIds } = await seedCourseWithLessons([10, 20]);
+
+    const before = await getDailyProgress(user.id);
+    expect(before).toMatchObject({ minutesToday: 0, lessonsTouchedToday: 0, completedToday: 0 });
+
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[0],
+      positionSeconds: 10,
+      percent: 50,
+      status: 'IN_PROGRESS',
+    });
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[1],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+
+    const progress = await getDailyProgress(user.id);
+    expect(progress.minutesToday).toBe(30);
+    expect(progress.lessonsTouchedToday).toBe(2);
+    expect(progress.completedToday).toBe(1);
+    expect(progress.goalMinutes).toBe(15); // default goal
+    expect(progress.percent).toBe(100); // 30 of 15 minutes → clamped
+  });
+
+  it('getDailyProgress uses the configured goal, not the default', async () => {
+    const user = await seedUser();
+    await updateSettings(user.id, { dailyGoalMinutes: 60 });
+    const progress = await getDailyProgress(user.id);
+    expect(progress.goalMinutes).toBe(60);
+    expect(progress.percent).toBe(0);
+  });
+
+  it('getContinueLearning returns the most recently touched in-progress lesson', async () => {
+    const user = await seedUser();
+    const { lessonIds } = await seedCourseWithLessons([10, 10]);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[0],
+      positionSeconds: 0,
+      percent: 40,
+      status: 'IN_PROGRESS',
+    });
+    expect((await getContinueLearning(user.id))?.lessonSlug).toBe(`db-l-${lessonIds[0]}`);
+
+    // Touch the second lesson later — it becomes the resume target.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[1],
+      positionSeconds: 5,
+      percent: 20,
+      status: 'IN_PROGRESS',
+    });
+    const latest = await getContinueLearning(user.id);
+    expect(latest?.lessonSlug).toBe(`db-l-${lessonIds[1]}`);
+    expect(latest?.courseSlug).toMatch(/^db-/);
+    expect(latest?.percent).toBe(20);
+  });
+
+  it('getContinueLearning ignores completed lessons and unpublished courses', async () => {
+    const user = await seedUser();
+    const published = await seedCourseWithLessons([10], 98);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: published.lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+
+    // Draft course with an in-progress lesson — must be ignored.
+    const draftCourseId = newId('crs');
+    await run(
+      `INSERT INTO courses (id, slug, title, description, level, category, cover_emoji, accent, is_published, position, created_at, updated_at)
+       VALUES (?, ?, 'Draft', 'd', 'a1', 'General', '📘', 'brand', 0, 97, ?, ?)`,
+      draftCourseId,
+      `db-draft-${draftCourseId}`,
+      nowIso(),
+      nowIso(),
+    );
+    const draftLessonId = newId('les');
+    await run(
+      `INSERT INTO lessons (id, course_id, slug, title, summary, content, transcript, duration_minutes, position, created_at, updated_at)
+       VALUES (?, ?, ?, 'Draft Lesson', 's', 'b', 't', 5, 1, ?, ?)`,
+      draftLessonId,
+      draftCourseId,
+      `db-dl-${draftLessonId}`,
+      nowIso(),
+      nowIso(),
+    );
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: draftLessonId,
+      positionSeconds: 0,
+      percent: 10,
+      status: 'IN_PROGRESS',
+    });
+
+    expect(await getContinueLearning(user.id)).toBeNull();
+    // Recent lessons legitimately include the completed published lesson,
+    // but the draft course's in-progress lesson must stay invisible.
+    const recent = await listRecentLessons(user.id);
+    expect(recent.map((lesson) => lesson.lessonSlug)).toEqual([`db-l-${published.lessonIds[0]}`]);
+    expect(recent[0].status).toBe('COMPLETED');
+  });
+
+  it('listRecentLessons mixes in-progress and completed lessons newest-first', async () => {
+    const user = await seedUser();
+    const { lessonIds } = await seedCourseWithLessons([10, 10, 10]);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[1],
+      positionSeconds: 3,
+      percent: 30,
+      status: 'IN_PROGRESS',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[2],
+      positionSeconds: 1,
+      percent: 10,
+      status: 'IN_PROGRESS',
+    });
+
+    const recent = await listRecentLessons(user.id, 4);
+    expect(recent.map((lesson) => lesson.lessonSlug)).toEqual([
+      `db-l-${lessonIds[2]}`,
+      `db-l-${lessonIds[1]}`,
+      `db-l-${lessonIds[0]}`,
+    ]);
+    expect(recent[2].status).toBe('COMPLETED');
+    expect(recent[0].percent).toBe(10);
+  });
+
+  it('getNextRecommendedCourse picks the first unfinished course with lessons', async () => {
+    const user = await seedUser();
+    // Negative positions sort before every other seeded course in the shared
+    // test database, so the recommendation is deterministic.
+    const first = await seedCourseWithLessons([10, 10], -1000);
+    const second = await seedCourseWithLessons([10], -999);
+
+    const initial = await getNextRecommendedCourse(user.id);
+    expect(initial?.id).toBe(first.courseId); // lowest position wins
+
+    // Complete everything in the first course → recommendation moves on.
+    for (const lessonId of first.lessonIds) {
+      await saveLessonProgress({
+        userId: user.id,
+        lessonId,
+        positionSeconds: 0,
+        percent: 100,
+        status: 'COMPLETED',
+      });
+    }
+    const next = await getNextRecommendedCourse(user.id);
+    expect(next?.id).toBe(second.courseId);
+  });
+
+  it('getCourseUnits lists units in order and lessons keep their unit link', async () => {
+    const { courseId, lessonIds } = await seedCourseWithLessons([10, 10, 10]);
+    const unitA = newId('unt');
+    const unitB = newId('unt');
+    for (const [unitId, title, position] of [
+      [unitA, 'Unit A', 2],
+      [unitB, 'Unit B', 1],
+    ] as const) {
+      await run(
+        `INSERT INTO course_units (id, course_id, title, summary, position, created_at, updated_at)
+         VALUES (?, ?, ?, 'unit summary', ?, ?, ?)`,
+        unitId,
+        courseId,
+        title,
+        position,
+        nowIso(),
+        nowIso(),
+      );
+    }
+    await run('UPDATE lessons SET unit_id = ? WHERE id = ?', unitB, lessonIds[0]);
+    await run('UPDATE lessons SET unit_id = ? WHERE id = ?', unitA, lessonIds[1]);
+    // lessonIds[2] stays ungrouped.
+
+    const units = await getCourseUnits(courseId);
+    expect(units.map((unit) => unit.title)).toEqual(['Unit B', 'Unit A']);
+    expect(units[0].courseId).toBe(courseId);
+    expect(units[0].summary).toBe('unit summary');
+  });
+
+  it('getCourseUnits degrades to [] on a pre-migration database (no course_units table)', async () => {
+    // Simulate production before `npm run db:migrate`: the table is absent.
+    // CASCADE is required because lessons.unit_id references the table.
+    await pglite.exec('DROP TABLE IF EXISTS course_units CASCADE');
+    const units = await getCourseUnits('any_course');
+    expect(units).toEqual([]);
+    // Restore the schema for the following tests. SCHEMA_SQL is idempotent,
+    // but `ADD COLUMN IF NOT EXISTS` skips the existing unit_id column, so the
+    // CASCADE-dropped foreign key must be re-created explicitly. Earlier tests
+    // may have left unit_id values pointing at units destroyed with the table,
+    // so dangling references are nulled first or the FK validation would fail.
+    await pglite.exec(SCHEMA_SQL);
+    await pglite.exec(`
+      UPDATE lessons SET unit_id = NULL
+        WHERE unit_id IS NOT NULL AND unit_id NOT IN (SELECT id FROM course_units);
+      ALTER TABLE lessons DROP CONSTRAINT IF EXISTS lessons_unit_id_fkey;
+      ALTER TABLE lessons ADD CONSTRAINT lessons_unit_id_fkey
+        FOREIGN KEY (unit_id) REFERENCES course_units(id) ON DELETE SET NULL;
+    `);
+    const restored = await getCourseUnits('any_course');
+    expect(restored).toEqual([]);
+  });
+
+  it('deleting a unit nulls the lessons it owned instead of deleting them', async () => {
+    const { courseId, lessonIds } = await seedCourseWithLessons([10]);
+    const unitId = newId('unt');
+    await run(
+      `INSERT INTO course_units (id, course_id, title, summary, position, created_at, updated_at)
+       VALUES (?, ?, 'Doomed Unit', 's', 1, ?, ?)`,
+      unitId,
+      courseId,
+      nowIso(),
+      nowIso(),
+    );
+    await run('UPDATE lessons SET unit_id = ? WHERE id = ?', unitId, lessonIds[0]);
+    await run('DELETE FROM course_units WHERE id = ?', unitId);
+    const lesson = await one<{ unit_id: string | null }>(
+      'SELECT unit_id FROM lessons WHERE id = ?',
+      lessonIds[0],
+    );
+    expect(lesson?.unit_id).toBeNull();
+  });
+
+  it('getLearnerMilestones counts completed lessons, passed quizzes, stories and reviews', async () => {
+    const user = await seedUser();
+    const { lessonIds } = await seedCourseWithLessons([10, 10]);
+    await saveLessonProgress({
+      userId: user.id,
+      lessonId: lessonIds[0],
+      positionSeconds: 0,
+      percent: 100,
+      status: 'COMPLETED',
+    });
+
+    // Published quiz, pass threshold 50: attempt at 50% passes, 25% does not.
+    const quizId = newId('qz');
+    await run(
+      `INSERT INTO quizzes (id, slug, title, description, level, is_published, position, pass_percent, created_at, updated_at)
+       VALUES (?, ?, 'Milestone Quiz', 'd', 'a1', 1, 1, 50, ?, ?)`,
+      quizId,
+      `db-q-${quizId}`,
+      nowIso(),
+      nowIso(),
+    );
+    await saveQuizAttempt({
+      userId: user.id,
+      quizId,
+      scorePoints: 1,
+      maxPoints: 4,
+      correctCount: 1,
+      totalQuestions: 4,
+      answers: '[]',
+    });
+    expect((await getLearnerMilestones(user.id)).quizzesPassed).toBe(0);
+    await saveQuizAttempt({
+      userId: user.id,
+      quizId,
+      scorePoints: 2,
+      maxPoints: 4,
+      correctCount: 2,
+      totalQuestions: 4,
+      answers: '[]',
+    });
+    expect((await getLearnerMilestones(user.id)).quizzesPassed).toBe(1);
+
+    // Unpublished quiz attempt never counts.
+    const draftQuizId = newId('qz');
+    await run(
+      `INSERT INTO quizzes (id, slug, title, description, level, is_published, position, pass_percent, created_at, updated_at)
+       VALUES (?, ?, 'Draft Quiz', 'd', 'a1', 0, 1, 10, ?, ?)`,
+      draftQuizId,
+      `db-dq-${draftQuizId}`,
+      nowIso(),
+      nowIso(),
+    );
+    await saveQuizAttempt({
+      userId: user.id,
+      quizId: draftQuizId,
+      scorePoints: 3,
+      maxPoints: 3,
+      correctCount: 3,
+      totalQuestions: 3,
+      answers: '[]',
+    });
+    expect((await getLearnerMilestones(user.id)).quizzesPassed).toBe(1);
+
+    const milestones = await getLearnerMilestones(user.id);
+    expect(milestones.lessonsCompleted).toBe(1);
+    expect(milestones.storiesStarted).toBe(0);
+    expect(milestones.reviewsDone).toBe(0);
+  });
+
+  it('new course profile columns default to safe empty values', async () => {
+    const { courseId } = await seedCourseWithLessons([10]);
+    const row = await one<{
+      objectives: string;
+      skills: string;
+      estimated_hours: number | null;
+      prerequisites: string;
+      final_quiz_id: string | null;
+      has_certificate: number;
+    }>('SELECT objectives, skills, estimated_hours, prerequisites, final_quiz_id, has_certificate FROM courses WHERE id = ?', courseId);
+    expect(row).toMatchObject({
+      objectives: '',
+      skills: '',
+      estimated_hours: null,
+      prerequisites: '',
+      final_quiz_id: null,
+      has_certificate: 0,
+    });
   });
 });

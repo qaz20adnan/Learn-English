@@ -5,6 +5,7 @@ import { foldToStep, type RoadmapStep } from '../roadmap';
 import type {
   Course,
   CourseProgressSummary,
+  CourseUnit,
   Lesson,
   LessonAssessment,
   LessonProgress,
@@ -75,6 +76,12 @@ interface CourseRow {
   is_published: number;
   position: number;
   lesson_count?: number;
+  objectives: string;
+  skills: string;
+  estimated_hours: number | null;
+  prerequisites: string;
+  final_quiz_id: string | null;
+  has_certificate: number;
 }
 
 interface LessonRow {
@@ -89,6 +96,16 @@ interface LessonRow {
   duration_minutes: number;
   position: number;
   media_id: string | null;
+  unit_id: string | null;
+}
+
+interface CourseUnitRow {
+  id: string;
+  course_id: string;
+  title: string;
+  title_ar: string | null;
+  summary: string;
+  position: number;
 }
 
 interface ProgressRow {
@@ -261,6 +278,12 @@ function toCourse(row: CourseRow): Course {
     isPublished: row.is_published === 1,
     position: row.position,
     lessonCount: row.lesson_count,
+    objectives: row.objectives ?? '',
+    skills: row.skills ?? '',
+    estimatedHours: row.estimated_hours ?? null,
+    prerequisites: row.prerequisites ?? '',
+    finalQuizId: row.final_quiz_id ?? null,
+    hasCertificate: (row.has_certificate ?? 0) === 1,
   };
 }
 
@@ -277,6 +300,7 @@ function toLesson(row: LessonRow): Lesson {
     durationMinutes: row.duration_minutes,
     position: row.position,
     mediaId: row.media_id,
+    unitId: row.unit_id ?? null,
   };
 }
 
@@ -823,6 +847,278 @@ export async function getLearningStats(userId: string): Promise<LearningStats> {
     coursesStarted: started?.c ?? 0,
     vocabularyTracked: vocab?.c ?? 0,
     reviewsDue: due?.c ?? 0,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dashboard extras (Sprint 5 — IMPROVEMENT_PLAN 3.1)                  */
+/* ------------------------------------------------------------------ */
+
+export interface DailyProgress {
+  /** Learner's configured daily goal in minutes (`user_settings`). */
+  goalMinutes: number;
+  /** Total duration of distinct lessons worked on today (UTC day). */
+  minutesToday: number;
+  /** `minutesToday / goalMinutes` clamped to 0-100. */
+  percent: number;
+  /** Distinct lessons touched today. */
+  lessonsTouchedToday: number;
+  /** Distinct lessons moved to (or already at) COMPLETED today. */
+  completedToday: number;
+}
+
+/**
+ * Progress against the learner's daily goal.
+ *
+ * "Today" is the UTC calendar day (`YYYY-MM-DD` prefix of the stored ISO
+ * timestamps). A lesson counts once no matter how many progress rows were
+ * written for it today; its full `duration_minutes` counts as time spent.
+ */
+export async function getDailyProgress(
+  userId: string,
+  goalMinutes?: number,
+): Promise<DailyProgress> {
+  const dayStart = new Date().toISOString().slice(0, 10);
+  const [settings, minutesRow, touchedRow] = await Promise.all([
+    goalMinutes !== undefined ? Promise.resolve({ dailyGoalMinutes: goalMinutes }) : getSettings(userId),
+    one<{ minutes: number }>(
+      `SELECT COALESCE(SUM(duration_minutes), 0)::int AS minutes
+         FROM lessons
+        WHERE id IN (
+          SELECT DISTINCT lesson_id FROM lesson_progress
+           WHERE user_id = ? AND updated_at >= ?
+        )`,
+      userId,
+      dayStart,
+    ),
+    one<{ touched: number; completed: number }>(
+      `SELECT COUNT(DISTINCT lesson_id)::int AS touched,
+              COUNT(DISTINCT CASE WHEN status = 'COMPLETED' THEN lesson_id END)::int AS completed
+         FROM lesson_progress
+        WHERE user_id = ? AND updated_at >= ?`,
+      userId,
+      dayStart,
+    ),
+  ]);
+
+  const minutesToday = minutesRow?.minutes ?? 0;
+  const goal = Math.max(1, settings.dailyGoalMinutes);
+  return {
+    goalMinutes: settings.dailyGoalMinutes,
+    minutesToday,
+    percent: Math.min(100, Math.round((minutesToday / goal) * 100)),
+    lessonsTouchedToday: touchedRow?.touched ?? 0,
+    completedToday: touchedRow?.completed ?? 0,
+  };
+}
+
+export interface ContinueLesson {
+  lessonSlug: string;
+  lessonTitle: string;
+  lessonTitleAr: string | null;
+  courseSlug: string;
+  courseTitle: string;
+  courseTitleAr: string | null;
+  courseEmoji: string;
+  /** Progress percent stored the last time the lesson was opened. */
+  percent: number;
+  updatedAt: string;
+}
+
+/**
+ * The single lesson the learner should resume next: the most recently touched
+ * IN_PROGRESS lesson from a published course. Null when there is nothing to
+ * resume (the UI falls back to the roadmap CTA).
+ */
+export async function getContinueLearning(userId: string): Promise<ContinueLesson | null> {
+  const row = await one<{
+    lesson_slug: string;
+    lesson_title: string;
+    lesson_title_ar: string | null;
+    course_slug: string;
+    course_title: string;
+    course_title_ar: string | null;
+    course_emoji: string;
+    percent: number;
+    updated_at: string;
+  }>(
+    `SELECT l.slug AS lesson_slug, l.title AS lesson_title, l.title_ar AS lesson_title_ar,
+            c.slug AS course_slug, c.title AS course_title, c.title_ar AS course_title_ar,
+            c.cover_emoji AS course_emoji, p.percent, p.updated_at
+       FROM lesson_progress p
+       JOIN lessons l ON l.id = p.lesson_id
+       JOIN courses c ON c.id = l.course_id
+      WHERE p.user_id = ? AND p.status = 'IN_PROGRESS' AND c.is_published = 1
+      ORDER BY p.updated_at DESC
+      LIMIT 1`,
+    userId,
+  );
+  if (!row) return null;
+  return {
+    lessonSlug: row.lesson_slug,
+    lessonTitle: row.lesson_title,
+    lessonTitleAr: row.lesson_title_ar,
+    courseSlug: row.course_slug,
+    courseTitle: row.course_title,
+    courseTitleAr: row.course_title_ar,
+    courseEmoji: row.course_emoji,
+    percent: row.percent,
+    updatedAt: row.updated_at,
+  };
+}
+
+export interface RecentLesson {
+  lessonSlug: string;
+  lessonTitle: string;
+  lessonTitleAr: string | null;
+  courseSlug: string;
+  courseTitle: string;
+  courseTitleAr: string | null;
+  courseEmoji: string;
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  percent: number;
+  updatedAt: string;
+}
+
+/** Latest touched lessons (in-progress or completed), newest first. */
+export async function listRecentLessons(userId: string, limit = 4): Promise<RecentLesson[]> {
+  const rows = await all<{
+    lesson_slug: string;
+    lesson_title: string;
+    lesson_title_ar: string | null;
+    course_slug: string;
+    course_title: string;
+    course_title_ar: string | null;
+    course_emoji: string;
+    status: 'IN_PROGRESS' | 'COMPLETED';
+    percent: number;
+    updated_at: string;
+  }>(
+    `SELECT l.slug AS lesson_slug, l.title AS lesson_title, l.title_ar AS lesson_title_ar,
+            c.slug AS course_slug, c.title AS course_title, c.title_ar AS course_title_ar,
+            c.cover_emoji AS course_emoji, p.status, p.percent, p.updated_at
+       FROM lesson_progress p
+       JOIN lessons l ON l.id = p.lesson_id
+       JOIN courses c ON c.id = l.course_id
+      WHERE p.user_id = ? AND p.status IN ('IN_PROGRESS', 'COMPLETED') AND c.is_published = 1
+      ORDER BY p.updated_at DESC
+      LIMIT ?`,
+    userId,
+    limit,
+  );
+  return rows.map((row) => ({
+    lessonSlug: row.lesson_slug,
+    lessonTitle: row.lesson_title,
+    lessonTitleAr: row.lesson_title_ar,
+    courseSlug: row.course_slug,
+    courseTitle: row.course_title,
+    courseTitleAr: row.course_title_ar,
+    courseEmoji: row.course_emoji,
+    status: row.status,
+    percent: row.percent,
+    updatedAt: row.updated_at,
+  }));
+}
+
+/**
+ * The first published course (path order) the learner has not completed yet.
+ * Pure composition over `getCourseProgressSummaries` — no extra queries.
+ */
+export async function getNextRecommendedCourse(userId: string): Promise<Course | null> {
+  const summaries = await getCourseProgressSummaries(userId);
+  const incomplete = summaries.find(
+    (item) => item.totalLessons > 0 && item.percent < 100,
+  );
+  return incomplete?.course ?? null;
+}
+
+/**
+ * Postgres SQLSTATE for «relation does not exist». A production database that
+ * has not run `npm run db:migrate` yet simply has no `course_units` table —
+ * the course page must render without unit grouping instead of failing.
+ */
+const PG_MISSING_RELATION = '42P01';
+
+function isMissingRelation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === PG_MISSING_RELATION
+  );
+}
+
+/** Units of a course in display order. */
+export async function getCourseUnits(courseId: string): Promise<CourseUnit[]> {
+  try {
+    const rows = await all<CourseUnitRow>(
+      'SELECT * FROM course_units WHERE course_id = ? ORDER BY position ASC',
+      courseId,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      courseId: row.course_id,
+      title: row.title,
+      titleAr: row.title_ar,
+      summary: row.summary,
+      position: row.position,
+    }));
+  } catch (error) {
+    // Deploy-safe degradation: before `db:migrate` runs, `course_units` does
+    // not exist. Rendering without units is identical to a course that has
+    // none; once the migration is applied, units appear automatically.
+    if (isMissingRelation(error)) return [];
+    throw error;
+  }
+}
+
+export interface LearnerMilestones {
+  lessonsCompleted: number;
+  /** Published quizzes whose best attempt reached `pass_percent`. */
+  quizzesPassed: number;
+  /** Stories with at least one attempt. */
+  storiesStarted: number;
+  /** Review cards that were reviewed at least once. */
+  reviewsDone: number;
+}
+
+/**
+ * Real, countable milestones for the achievements strip. Quiz passing uses the
+ * best attempt per quiz compared against that quiz's own pass threshold —
+ * the same rule the quiz UI applies.
+ */
+export async function getLearnerMilestones(userId: string): Promise<LearnerMilestones> {
+  const [lessons, quizRows, stories, reviews] = await Promise.all([
+    one<{ c: number }>(
+      "SELECT COUNT(*)::int AS c FROM lesson_progress WHERE user_id = ? AND status = 'COMPLETED'",
+      userId,
+    ),
+    all<{ best: number; pass_percent: number }>(
+      `SELECT t.best, q.pass_percent
+         FROM (
+           SELECT qa.quiz_id, MAX(1.0 * qa.score_points / NULLIF(qa.max_points, 0)) AS best
+             FROM quiz_attempts qa
+            WHERE qa.user_id = ?
+            GROUP BY qa.quiz_id
+         ) t
+         JOIN quizzes q ON q.id = t.quiz_id
+        WHERE q.is_published = 1`,
+      userId,
+    ),
+    one<{ c: number }>(
+      'SELECT COUNT(DISTINCT story_id)::int AS c FROM story_attempts WHERE user_id = ?',
+      userId,
+    ),
+    one<{ c: number }>(
+      'SELECT COUNT(*)::int AS c FROM vocab_review WHERE user_id = ? AND last_reviewed_at IS NOT NULL',
+      userId,
+    ),
+  ]);
+
+  return {
+    lessonsCompleted: lessons?.c ?? 0,
+    quizzesPassed: quizRows.filter((row) => row.best * 100 >= row.pass_percent).length,
+    storiesStarted: stories?.c ?? 0,
+    reviewsDone: reviews?.c ?? 0,
   };
 }
 

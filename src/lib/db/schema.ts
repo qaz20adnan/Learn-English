@@ -9,6 +9,10 @@
  * Timestamps are stored as ISO-8601 TEXT on purpose: the application compares
  * them lexicographically (`expires_at < now`) and the existing row mappers
  * expect strings, which also keeps the migration from SQLite mechanical.
+ *
+ * Destructive/step-down changes are NOT part of this file: the bottom block
+ * only ever adds things (`IF NOT EXISTS`). Reversible up/down pairs live in
+ * `src/lib/db/migrations.ts` and are applied with `npm run db:migrate`.
  */
 export const SCHEMA_SQL = /* sql */ `
 CREATE TABLE IF NOT EXISTS users (
@@ -70,7 +74,15 @@ CREATE TABLE IF NOT EXISTS courses (
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0, 1)),
   position     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
-  updated_at   TEXT NOT NULL
+  updated_at   TEXT NOT NULL,
+  -- Sprint 5 course profile (Sprint 3.2 of IMPROVEMENT_PLAN). Every column is
+  -- NULL-safe / defaulted so existing rows keep working unchanged.
+  objectives      TEXT NOT NULL DEFAULT '',
+  skills          TEXT NOT NULL DEFAULT '',
+  estimated_hours INTEGER,
+  prerequisites   TEXT NOT NULL DEFAULT '',
+  final_quiz_id   TEXT,
+  has_certificate INTEGER NOT NULL DEFAULT 0 CHECK (has_certificate IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS idx_courses_playlist ON courses(playlist_id);
 CREATE INDEX IF NOT EXISTS idx_courses_position ON courses(position, title);
@@ -306,4 +318,26 @@ CREATE INDEX IF NOT EXISTS idx_playback_failures_media
   ON playback_failures(media_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_playback_failures_recent
   ON playback_failures(created_at);
+
+-- Sprint 5 course units (Sprint 3.4 of IMPROVEMENT_PLAN). Units group lessons
+-- inside a course; every lesson keeps working without one (unit_id NULL).
+CREATE TABLE IF NOT EXISTS course_units (
+  id         TEXT PRIMARY KEY,
+  course_id  TEXT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  title_ar   TEXT,
+  summary    TEXT NOT NULL DEFAULT '',
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_course_units_course ON course_units(course_id, position);
+
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS objectives TEXT NOT NULL DEFAULT '';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS skills TEXT NOT NULL DEFAULT '';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS estimated_hours INTEGER;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS prerequisites TEXT NOT NULL DEFAULT '';
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS final_quiz_id TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS has_certificate INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS unit_id TEXT REFERENCES course_units(id) ON DELETE SET NULL;
 `;
