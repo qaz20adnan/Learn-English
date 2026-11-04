@@ -3,36 +3,68 @@ import type { Metadata } from 'next';
 import { BookCheck, Clock3, LibraryBig, Repeat2 } from 'lucide-react';
 import { requireUser } from '@/lib/auth/dal';
 import {
-  getCourseProgressSummaries,
+  getContinueLearning,
+  getDailyProgress,
   getLearningStats,
+  getLearnerMilestones,
+  getNextRecommendedCourse,
   getPointsSummary,
-  listCourses,
+  getRoadmapData,
+  listRecentLessons,
 } from '@/lib/db/queries';
+import { buildAchievements, countUnlocked } from '@/lib/achievements';
 import { Card, LevelBadge, ProgressBar, SectionTitle, StatCard } from '@/components/ui';
 import { PointsOverview } from '@/components/points/PointsOverview';
 import { MotivationalBanner } from '@/components/dashboard/MotivationalBanner';
+import { ContinueLearningCard } from '@/components/dashboard/ContinueLearningCard';
+import { DailyGoalCard } from '@/components/dashboard/DailyGoalCard';
+import { RoadmapTeaserCard } from '@/components/dashboard/RoadmapTeaserCard';
+import { AchievementsStrip } from '@/components/dashboard/AchievementsStrip';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 
 export const metadata: Metadata = { title: 'لوحة التعلّم' };
 
+/**
+ * Learner dashboard — the 12 agreed elements (Sprint 5, IMPROVEMENT_PLAN 3.1):
+ *  1. welcome card            2. «تابع التعلم» CTA (last in-progress lesson)
+ *  3. daily goal progress     4. current stats
+ *  5. due reviews banner      6. next recommended course
+ *  7. recently opened lessons 8. achievements (starter set)
+ *  9. motivational quote      10. roadmap link card
+ * 11. points overview         12. browse-courses action (welcome card)
+ *
+ * Everything below is server-rendered from real DB numbers — no client JS,
+ * no invented metrics.
+ */
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [stats, summaries, points, courses, { dict }] = await Promise.all([
-    getLearningStats(user.id),
-    getCourseProgressSummaries(user.id),
-    getPointsSummary(user.id),
-    listCourses(),
-    getLocaleAndDictionary(),
-  ]);
+  const [stats, points, daily, continueLesson, recentLessons, milestones, roadmap, recommended, { dict }] =
+    await Promise.all([
+      getLearningStats(user.id),
+      getPointsSummary(user.id),
+      getDailyProgress(user.id),
+      getContinueLearning(user.id),
+      listRecentLessons(user.id, 4),
+      getLearnerMilestones(user.id),
+      getRoadmapData(user.id),
+      getNextRecommendedCourse(user.id),
+      getLocaleAndDictionary(),
+    ]);
   const t = dict.dashboard;
 
-  const started = summaries
-    .filter((item) => item.completedLessons > 0)
-    .sort((a, b) => b.percent - a.percent);
-  const recommended = started.length > 0 ? [] : courses.slice(0, 3);
+  const achievements = buildAchievements({
+    lessonsCompleted: milestones.lessonsCompleted,
+    quizzesPassed: milestones.quizzesPassed,
+    storiesStarted: milestones.storiesStarted,
+    reviewsDone: milestones.reviewsDone,
+    pointsTotal: points.total,
+    currentStreak: points.streak,
+  });
+  const unlockedAchievements = countUnlocked(achievements);
 
   return (
     <div className="flex flex-col gap-8">
+      {/* 1 + 12 — welcome card with the browse-courses action */}
       <section className="card relative overflow-hidden bg-gradient-to-l from-brand-600 via-brand-500 to-brand-400 p-6 text-white shadow-xl shadow-brand-600/15">
         <div
           aria-hidden
@@ -47,17 +79,38 @@ export default async function DashboardPage() {
             <h1 className="text-2xl font-black tracking-tight">{t.greeting(user.name)}</h1>
             <p className="mt-1 max-w-xl text-sm text-white/85">{t.greetingSub}</p>
           </div>
-          <Link
-            href="/courses"
-            className="rounded-xl border border-white/20 bg-white/15 px-4 py-2 text-sm font-bold backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/25"
-          >
-            {t.browseCourses}
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/roadmap"
+              className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/25"
+            >
+              🗺️ {t.roadmapCardAction}
+            </Link>
+            <Link
+              href="/courses"
+              className="rounded-xl border border-white/20 bg-white/15 px-4 py-2 text-sm font-bold backdrop-blur transition hover:-translate-y-0.5 hover:bg-white/25"
+            >
+              {t.browseCourses}
+            </Link>
+          </div>
         </div>
       </section>
 
+      {/* 9 — motivational quote */}
       <MotivationalBanner />
 
+      {/* 2 — continue learning CTA */}
+      <ContinueLearningCard lesson={continueLesson} dict={dict} />
+
+      {/* 3 + 10 — daily goal beside the roadmap teaser */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        <DailyGoalCard progress={daily} dict={dict} />
+        <div className="lg:col-span-2">
+          <RoadmapTeaserCard data={roadmap} dict={dict} />
+        </div>
+      </div>
+
+      {/* 4 — quick stats */}
       <section>
         <SectionTitle title={t.quickView} description={t.quickViewSub} />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -73,6 +126,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
+      {/* 5 — due reviews banner */}
       {stats.reviewsDue > 0 ? (
         <Link
           href="/review"
@@ -95,6 +149,87 @@ export default async function DashboardPage() {
         </Link>
       ) : null}
 
+      {/* 7 — recently opened lessons */}
+      {recentLessons.length > 0 ? (
+        <section>
+          <SectionTitle title={t.recentLessonsTitle} description={t.recentLessonsSub} />
+          <ol className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {recentLessons.map((item) => (
+              <Card key={`${item.courseSlug}/${item.lessonSlug}`} as="li" className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="text-2xl" aria-hidden>
+                      {item.courseEmoji}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-bold">{item.lessonTitleAr ?? item.lessonTitle}</h3>
+                      <p className="truncate text-xs text-muted">
+                        {item.courseTitleAr ?? item.courseTitle}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      item.status === 'COMPLETED'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200'
+                        : 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-200'
+                    }`}
+                  >
+                    {item.status === 'COMPLETED' ? t.recentLessonCompleted : t.recentLessonInProgress}
+                  </span>
+                </div>
+                <ProgressBar value={item.percent} label={`${item.lessonTitle} ${item.percent}%`} />
+                <Link
+                  href={`/courses/${item.courseSlug}/lessons/${item.lessonSlug}`}
+                  className="text-sm font-bold text-brand-600 hover:underline dark:text-brand-300"
+                >
+                  {t.continueAction} ←
+                </Link>
+              </Card>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      {/* 6 — next recommended course */}
+      {recommended ? (
+        <section>
+          <SectionTitle title={t.nextCourseTitle} description={t.nextCourseSub} />
+          <Card className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl" aria-hidden>
+                {recommended.coverEmoji}
+              </span>
+              <div>
+                <h3 className="text-lg font-bold">{recommended.titleAr ?? recommended.title}</h3>
+                <p className="max-w-xl text-sm text-muted">{recommended.description}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <LevelBadge level={recommended.level} label={dict.levels[recommended.level]} />
+              <Link
+                href={`/courses/${recommended.slug}`}
+                className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-brand-700"
+              >
+                {t.openAction} ←
+              </Link>
+            </div>
+          </Card>
+        </section>
+      ) : (
+        <section>
+          <SectionTitle title={t.nextCourseTitle} />
+          <Card className="border-emerald-300 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/30">
+            <h3 className="font-extrabold">{t.allCoursesDoneTitle}</h3>
+            <p className="mt-1 text-sm text-muted">{t.allCoursesDoneSub}</p>
+          </Card>
+        </section>
+      )}
+
+      {/* 8 — achievements */}
+      <AchievementsStrip items={achievements} unlockedCount={unlockedAchievements} dict={dict} />
+
+      {/* 11 — points */}
       <section>
         <SectionTitle
           title={dict.points.label}
@@ -110,66 +245,6 @@ export default async function DashboardPage() {
         />
         <PointsOverview summary={points} dict={dict} />
       </section>
-
-      {started.length > 0 ? (
-        <section>
-          <SectionTitle title={t.continueTitle} />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {started.slice(0, 4).map((item) => (
-              <Card key={item.course.id} className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl" aria-hidden>
-                      {item.course.coverEmoji}
-                    </span>
-                    <div>
-                      <h3 className="font-bold">{item.course.titleAr ?? item.course.title}</h3>
-                      <p className="text-xs text-muted">{item.course.title}</p>
-                    </div>
-                  </div>
-                  <LevelBadge level={item.course.level} label={dict.levels[item.course.level]} />
-                </div>
-                <ProgressBar value={item.percent} label={`${item.course.title} ${item.percent}%`} />
-                <div className="flex items-center justify-between text-xs text-muted">
-                  <span>{t.ofLessons(item.completedLessons, item.totalLessons)}</span>
-                  <Link
-                    href={`/courses/${item.course.slug}`}
-                    className="font-bold text-brand-600 hover:underline dark:text-brand-300"
-                  >
-                    {t.continueAction} ←
-                  </Link>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {recommended.length > 0 ? (
-        <section>
-          <SectionTitle title={t.recommendedTitle} description={t.recommendedSub} />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            {recommended.map((course) => (
-              <Card key={course.id} className="flex flex-col gap-2">
-                <span className="text-2xl" aria-hidden>
-                  {course.coverEmoji}
-                </span>
-                <h3 className="font-bold">{course.titleAr ?? course.title}</h3>
-                <p className="text-xs text-muted">{course.description}</p>
-                <div className="mt-auto flex items-center justify-between pt-2">
-                  <LevelBadge level={course.level} label={dict.levels[course.level]} />
-                  <Link
-                    href={`/courses/${course.slug}`}
-                    className="text-sm font-bold text-brand-600 hover:underline dark:text-brand-300"
-                  >
-                    {t.openAction} ←
-                  </Link>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }

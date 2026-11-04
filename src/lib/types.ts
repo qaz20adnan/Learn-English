@@ -59,6 +59,28 @@ export interface Course {
   isPublished: boolean;
   position: number;
   lessonCount?: number;
+  /** Learning objectives, one per line (empty string when unset). */
+  objectives: string;
+  /** Comma- or newline-separated skill tags (empty string when unset). */
+  skills: string;
+  /** Editor-set rough hour estimate; null when not provided. */
+  estimatedHours: number | null;
+  /** Free-form prerequisites note shown in the course info bar. */
+  prerequisites: string;
+  /** Final assessment quiz id; rendered only when the quiz exists & is published. */
+  finalQuizId: string | null;
+  /** Course grants a completion certificate (badge only in this stage — D9). */
+  hasCertificate: boolean;
+}
+
+/** A named group of lessons inside a course (Sprint 5 — course units). */
+export interface CourseUnit {
+  id: string;
+  courseId: string;
+  title: string;
+  titleAr: string | null;
+  summary: string;
+  position: number;
 }
 
 export interface Lesson {
@@ -73,6 +95,8 @@ export interface Lesson {
   durationMinutes: number;
   position: number;
   mediaId: string | null;
+  /** Owning unit when the course is organised into units; null keeps the lesson ungrouped. */
+  unitId: string | null;
 }
 
 export interface LessonWithMedia extends Lesson {

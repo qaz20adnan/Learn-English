@@ -4,7 +4,7 @@ import { requireUser } from '@/lib/auth/dal';
 import { getCourseProgressSummaries } from '@/lib/db/queries';
 import { getLocaleAndDictionary } from '@/lib/i18n/server';
 import { CATALOG_COURSES, CATALOG_LEVELS } from '@/lib/content/catalog';
-import { Card, LevelBadge, ProgressBar, SectionTitle } from '@/components/ui';
+import { Card, EmptyState, LevelBadge, ProgressBar, SectionTitle } from '@/components/ui';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { dict } = await getLocaleAndDictionary();
@@ -26,6 +26,31 @@ export default async function CoursesPage() {
   })).filter((group) => group.items.length > 0);
 
   const ungrouped = summaries.filter((item) => !groupBySlug.has(item.course.slug));
+
+  // Sprint 5 (3.5) — honest empty state when nothing is published yet.
+  if (summaries.length === 0) {
+    return (
+      <div className="flex flex-col gap-8">
+        <SectionTitle
+          title={dict.courses.libraryTitle}
+          description={dict.courses.libraryDescription}
+        />
+        <EmptyState
+          emoji="🗂️"
+          title={dict.courses.noCoursesTitle}
+          description={dict.courses.noCoursesSub}
+          action={
+            <Link
+              href="/roadmap"
+              className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-brand-700"
+            >
+              {dict.dashboard.roadmapCardAction}
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">
